@@ -18,7 +18,7 @@ type Routes = {
 }
 
 type Options = {
-    ignoreTailingSlash?: boolean;
+    ignoreTrailingSlash?: boolean;
 }
 
 type Middleware = (req: ServerRequest, respondValue: string) => string;
@@ -38,7 +38,7 @@ export default class Aqua {
 
     private async handleRequests() {
         for await (const req of this.server) {
-            if (this.options.ignoreTailingSlash) req.url = req.url.replace(/\/$/, "") + "/";
+            if (this.options.ignoreTrailingSlash) req.url = req.url.replace(/\/$/, "") + "/";
 
             if (!this.routes[req.method + req.url]) {
                 req.respond({ body: "No registered route found." });
@@ -79,7 +79,7 @@ export default class Aqua {
             return;
         }
 
-        if (this.options.ignoreTailingSlash) path = path.replace(/\/$/, "") + "/";
+        if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
 
         if (this.routes[method + path]) {
             console.error(`The route ${path} (method: ${method}) has already been declared.`);

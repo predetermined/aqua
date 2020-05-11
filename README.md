@@ -2,7 +2,7 @@
 
 ## Just get it running
 ```typescript
-const app = new Aqua(3100, { ignoreTailingSlash: true });
+const app = new Aqua(3100, { ignoreTrailingSlash: true });
 
 app.route("/", "GET", (req) => {
     return "Hello, World!";
