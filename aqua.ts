@@ -81,11 +81,6 @@ export default class Aqua {
 
         if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
 
-        if (this.routes[method + path]) {
-            console.error(`The route ${path} (method: ${method}) has already been declared.`);
-            return;
-        }
-
         this.routes[method + path] = callback;
         return this;
     }
