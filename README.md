@@ -10,7 +10,7 @@ app.route("/", "GET", (req) => {
 ```
 
 ## Middlewares
-You can register middlewares, that will be able to adjust the respond output the following way:
+You can register middlewares, that will be able to adjust the respond value, the following way:
 ```typescript
 app.register((req, respondValue) => {
     // do modifications to the respond value
