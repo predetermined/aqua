@@ -65,7 +65,7 @@ export default class Aqua {
         return body;
     }
 
-    parseQuery(req: ServerRequest): {} {
+    private parseQuery(req: ServerRequest): {} {
         const queryURL = req.url.replace(/(.*)\?/, "");
         const queryString = queryURL.split("&");
 
