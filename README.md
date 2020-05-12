@@ -1,12 +1,30 @@
 # Aqua
+Aqua is a minimal and fast web framework.
 
-## Just get it running
+## Features
+- Immediate parsing of the request body, query and the cookie string
+- Middleware functions
+- Possibility for route changes while runtime
+
+## Example usage
 ```typescript
-const app = new Aqua(3100, { ignoreTrailingSlash: true });
+const app = new Aqua(3100);
 
-app.route("/", "GET", (req) => {
+app.get("/", (req) => {
     return "Hello, World!";
 });
+```
+
+## Routing
+You can either use the short-form syntax for the `GET` and `POST` method
+```typescript
+app.get("/", (req) => "Hello, World!")
+app.post("/", (req) => "Hello, World!")
+```
+
+or use the route function
+```typescript
+app.route("/", "GET", (req) => "Hello, World!")
 ```
 
 ## Middlewares
@@ -18,9 +36,9 @@ app.register((req, respondValue) => {
 });
 ```
 
-## Request functions
+## Response functions
 ```typescript
-req.setCookie("hello", "world"); // Cookie 'hello' with value 'world'
-req.setHeader("Access-Control-Allow-Origin", "") // Corresponds to 'Access-Control-Allow-Origin: *'
+req.setCookie("hello", "world") // Sets a cookie with the name 'hello' and the value 'world'
+req.setHeader("Access-Control-Allow-Origin", "*") // Corresponds to 'Access-Control-Allow-Origin: *'
 req.setStatusCode(404) // Page returns with the status code 404
 ```
