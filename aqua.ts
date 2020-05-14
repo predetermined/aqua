@@ -10,6 +10,7 @@ type Request = {
     query: {};
     body: {};
     cookies: {};
+    parameters: { [parameter: string]: string; };
     _responseHeaders: Headers;
     _responseStatusCode: number;
     setStatusCode(statusCode: number): void;
@@ -17,8 +18,17 @@ type Request = {
     setCookie(name: string, value: string): void;
 };
 
+type ResponseHandler = (req: Request) => any;
+
+type Route = {
+    path: string;
+    usesURLParameters: boolean;
+    urlParameterRegex?: RegExp;
+    responseHandler: ResponseHandler;
+}
+
 type Routes = {
-    [key: string]: (req: Request) => any;
+    [path: string]: Route;
 }
 
 type Options = {
@@ -43,7 +53,7 @@ export default class Aqua {
     private async parseBody(req: ServerRequest): Promise<{}> {
         const buffer: Uint8Array = new Uint8Array(req.contentLength || 0);
         const lengthRead: number = await req.body.read(buffer) || 0;
-        const rawBody: string | object = new TextDecoder().decode(buffer.subarray(0, lengthRead));
+        const rawBody: string = new TextDecoder().decode(buffer.subarray(0, lengthRead));
         let body: {} = {};
 
         try {
@@ -91,41 +101,76 @@ export default class Aqua {
         }, {}) || {};
     }
 
+    private connectURLParameters(route: Route, requestedPath: string): {} {
+        return route.path.match(/:([a-zA-Z0-9_]*)/g)?.reduce((storage: { urlParameters: any; currentRequestedPath: string; }, urlParameterWithColon: string) => {
+            const urlParameter = urlParameterWithColon.replace(":", "");
+            const partTillParameter = route.path.split(urlParameterWithColon)[0];
+            const urlParameterValue = storage.currentRequestedPath.replace(partTillParameter, "").match(/([a-zA-Z0-9_]*)/g)?.[0];
+            const currentRequestedPath = storage.currentRequestedPath.replace(/:([a-zA-Z0-9_]*)/, "");
+
+            return {
+                urlParameters: {
+                    ...storage.urlParameters,
+                    [urlParameter]: urlParameterValue
+                },
+                currentRequestedPath
+            };
+        }, { urlParameters: {}, currentRequestedPath: requestedPath }).urlParameters;
+    }
+
+    private async respondToRequest(req: ServerRequest, requestedPath: string, route: Route, usesURLParameters: boolean = false) {
+        const userFriendlyRequest: Request = {
+            raw: req,
+            url: req.url,
+            headers: req.headers,
+            method: (req.method as Method),
+            query: this.parseQuery(req),
+            body: await this.parseBody(req),
+            cookies: this.parseCookies(req),
+            parameters: usesURLParameters ? this.connectURLParameters(route, requestedPath) : {},
+            _responseHeaders: new Headers(),
+            _responseStatusCode: 200,
+            setStatusCode(statusCode: number) {
+                this._responseStatusCode = statusCode;
+            },
+            setHeader(name: string, value: string) {
+                this._responseHeaders.append(name, value);
+            },
+            setCookie(name: string, value: string) {
+                this._responseHeaders.append("Set-Cookie", `${name}=${value}`);
+            }
+        }
+
+        const respondValue = this.middlewares.reduce((respondValue: string, middleware: Middleware): string => {
+            if (!respondValue) return respondValue;
+
+            return middleware(req, respondValue);
+        }, await route.responseHandler(userFriendlyRequest));
+
+        req.respond({ status: userFriendlyRequest._responseStatusCode, headers: userFriendlyRequest._responseHeaders, body: respondValue });
+    }
+
     private async handleRequests() {
         for await (const req of this.server) {
             if (this.options.ignoreTrailingSlash) req.url = req.url.replace(/\/$/, "") + "/";
 
-            const routingPath = req.url.replace(/(\?(.*))|(\#(.*))/, "");
+            const requestedPath = req.url.replace(/(\?(.*))|(\#(.*))/, "");
 
-            if (!this.routes[req.method + routingPath]) {
-                req.respond({ status: 404, body: "No registered route found." });
-            }else {
-                const userFriendlyRequest: Request = {
-                    raw: req,
-                    url: req.url,
-                    headers: req.headers,
-                    method: (req.method as Method),
-                    query: this.parseQuery(req),
-                    body: await this.parseBody(req),
-                    cookies: this.parseCookies(req),
-                    _responseHeaders: new Headers(),
-                    _responseStatusCode: 200,
-                    setStatusCode(statusCode: number) {
-                        this._responseStatusCode = statusCode;
-                    },
-                    setHeader(name: string, value: string) {
-                        this._responseHeaders.append(name, value);
-                    },
-                    setCookie(name: string, value: string) {
-                        this._responseHeaders.append("Set-Cookie", `${name}=${value}`);
-                    }
+            if (!this.routes[req.method + requestedPath]) {
+                const matchingRouteWithURLParameters = this.routes[Object.keys(this.routes).find((path: string) => {
+                    if (!path.includes(":")) return false;
+                    const route: Route = this.routes[path];
+
+                    return requestedPath.replace(route.urlParameterRegex as RegExp, "").length === 0;
+                }) || ""];
+
+                if (matchingRouteWithURLParameters) {
+                    await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
+                }else {
+                    req.respond({ status: 404, body: "No registered route found." });
                 }
-
-                const respondValue = this.middlewares.reduce((respondValue: string, middleware: Middleware): string => {
-                    return middleware(req, respondValue);
-                }, await this.routes[req.method + routingPath](userFriendlyRequest));
-
-                req.respond({ status: userFriendlyRequest._responseStatusCode, headers: userFriendlyRequest._responseHeaders, body: respondValue });
+            }else {
+                await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
             }
         }
     }
@@ -134,7 +179,7 @@ export default class Aqua {
         this.middlewares.push(middleware);
     }
 
-    public route(path: string, method: Method, callback: (req: Request) => any) {
+    public route(path: string, method: Method, responseHandler: (req: Request) => any) {
         if (!path.startsWith("/")) {
             console.warn("Routes must start with a slash");
             return;
@@ -142,7 +187,14 @@ export default class Aqua {
 
         if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
 
-        this.routes[method + path] = callback;
+        const usesURLParameters = /:[a-zA-Z]/.test(path);
+
+        this.routes[method + path] = {
+            path,
+            usesURLParameters,
+            urlParameterRegex: usesURLParameters ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/, "([^\/]*)")) : undefined,
+            responseHandler
+        };
         return this;
     }
 
