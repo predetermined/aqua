@@ -1,4 +1,5 @@
 import { serve, Server, ServerRequest } from "https://deno.land/std@v0.42.0/http/server.ts";
+import Router from "./router.ts";
 
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 
@@ -20,15 +21,11 @@ type Request = {
 
 type ResponseHandler = (req: Request) => any;
 
-type Route = {
+export type Route = {
     path: string;
     usesURLParameters: boolean;
     urlParameterRegex?: RegExp;
     responseHandler: ResponseHandler;
-}
-
-type Routes = {
-    [path: string]: Route;
 }
 
 type Options = {
@@ -39,7 +36,7 @@ type Middleware = (req: ServerRequest, respondValue: string) => string;
 
 export default class Aqua {
     private readonly server: Server;
-    private routes: Routes = {};
+    private routes: { [path: string]: Route } = {};
     private options: Options = {};
     private middlewares: Middleware[] = [];
 
@@ -154,15 +151,10 @@ export default class Aqua {
         for await (const req of this.server) {
             if (this.options.ignoreTrailingSlash) req.url = req.url.replace(/\/$/, "") + "/";
 
-            const requestedPath = req.url.replace(/(\?(.*))|(\#(.*))/, "");
+            const requestedPath = Router.parseRequestPath(req.url);
 
             if (!this.routes[req.method + requestedPath]) {
-                const matchingRouteWithURLParameters = this.routes[Object.keys(this.routes).find((path: string) => {
-                    if (!path.includes(":")) return false;
-                    const route: Route = this.routes[path];
-
-                    return requestedPath.replace(route.urlParameterRegex as RegExp, "").length === 0;
-                }) || ""];
+                const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
 
                 if (matchingRouteWithURLParameters) {
                     await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
@@ -177,6 +169,7 @@ export default class Aqua {
 
     public register(middleware: Middleware) {
         this.middlewares.push(middleware);
+        return this;
     }
 
     public route(path: string, method: Method, responseHandler: (req: Request) => any) {
@@ -200,9 +193,11 @@ export default class Aqua {
 
     public get(path: string, callback: (req: Request) => any) {
         this.route(path, "GET", callback);
+        return this;
     }
 
     public post(path: string, callback: (req: Request) => any) {
         this.route(path, "POST", callback);
+        return this;
     }
 }
