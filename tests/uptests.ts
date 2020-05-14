@@ -1,9 +1,9 @@
 import Aqua from "../aqua.ts";
 
-const app = new Aqua(3000);
+const app = new Aqua(4000);
 
-async function request() {
-    const r = await fetch("http://localhost:3000");
+async function request(suffix: string = "") {
+    const r = await fetch(`http://localhost:4000${suffix}`);
 
     return await r.text();
 }
@@ -23,4 +23,17 @@ Deno.test("Middlewares working?", async () => {
     const content = await request();
 
     if (content !== "Hello, Planet!") throw Error("Middlewares don't seem to work");
+});
+
+Deno.test("URL parameters working?", async () => {
+    app.route("/api/:action", "GET", (req) => {
+        if (req.parameters.action !== "hello") throw Error("URL parameters don't seem to work");
+    });
+
+    const content = await request(`/api/hello`);
+    await new Promise((resolve) => {
+        setTimeout(() => {
+            resolve();
+        }, 250);
+    });
 });
