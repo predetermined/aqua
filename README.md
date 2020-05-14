@@ -36,6 +36,14 @@ app.register((req, respondValue) => {
 });
 ```
 
+## URL parameters
+You can define URL parameters by using a colon followed by the key name.
+```typescript
+app.get("/api/:action", (req) => {
+    return req.parameters.action;
+});
+```
+
 ## Response functions
 ```typescript
 req.setCookie("hello", "world") // Sets a cookie with the name 'hello' and the value 'world'
