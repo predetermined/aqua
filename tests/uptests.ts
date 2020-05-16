@@ -18,7 +18,10 @@ Deno.test("Is website up and is the content right?", async () => {
 Deno.test("Middlewares working?", async () => {
     app.route("/", "GET", (req) => "Hello, REPLACE_ME!");
     app.register((req, respondValue) => {
-        return respondValue.replace("REPLACE_ME", "Planet");
+        return {
+            ...respondValue,
+            content: respondValue.content.replace("REPLACE_ME", "Planet")
+        };
     });
     const content = await request();
 
@@ -28,6 +31,7 @@ Deno.test("Middlewares working?", async () => {
 Deno.test("URL parameters working?", async () => {
     app.route("/api/:action", "GET", (req) => {
         if (req.parameters.action !== "hello") throw Error("URL parameters don't seem to work");
+        return "Thanks for the API call!";
     });
 
     const content = await request(`/api/hello`);
