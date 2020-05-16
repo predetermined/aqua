@@ -46,9 +46,24 @@ app.get("/api/:action", (req) => {
 });
 ```
 
-## Response functions
+## Response value
+You can either just return a string
 ```typescript
-req.setCookie("hello", "world") // Sets a cookie with the name 'hello' and the value 'world'
-req.setHeader("Access-Control-Allow-Origin", "*") // Corresponds to 'Access-Control-Allow-Origin: *'
-req.setStatusCode(404) // Page returns with the status code 404
+app.get("/", (req) => {
+    return "Hello, World!";
+});
 ```
+
+or return a response object to also set cookies, headers or a status code
+```typescript
+app.get("/", (req) => {
+    return {
+        statusCode: 200,
+        cookies: { hello: "I'm a cookie value" },
+        headers: { hello: "I'm a header value" },
+        content: "Hello, World!"
+    };
+});
+```
+Cookies and headers are just getting appended, so no information is getting lost by providing custom ones.
+However, you can still overwrite existing headers.
