@@ -30,11 +30,12 @@ app.route("/", "GET", (req) => "Hello, World!")
 ```
 
 ## Middlewares
-You can register middlewares, that will be able to adjust the respond value, the following way:
+You can register middlewares, that will be able to adjust the respond object, the following way:
 ```typescript
-app.register((req, respondValue) => {
-    // do modifications to the respond value
-    return respondValue;
+app.register((req, response) => {
+    // Make changes to the response object
+    // response.content = response.content.replace("Hello", "Hi");
+    return response;
 });
 ```
 
