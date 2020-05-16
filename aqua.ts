@@ -32,7 +32,7 @@ type Options = {
     ignoreTrailingSlash?: boolean;
 }
 
-type Middleware = (req: ServerRequest, respondValue: string) => string;
+type Middleware = (req: Request, respondValue: string) => string;
 
 export default class Aqua {
     private readonly server: Server;
@@ -151,7 +151,7 @@ export default class Aqua {
         const respondValue = this.middlewares.reduce((respondValue: string, middleware: Middleware): string => {
             if (!respondValue) return respondValue;
 
-            return middleware(req, respondValue);
+            return middleware(userFriendlyRequest, respondValue);
         }, await route.responseHandler(userFriendlyRequest));
 
         req.respond({ status: userFriendlyRequest._responseStatusCode, headers: userFriendlyRequest._responseHeaders, body: respondValue });
