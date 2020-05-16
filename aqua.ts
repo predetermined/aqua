@@ -102,7 +102,10 @@ export default class Aqua {
         return route.path.match(/:([a-zA-Z0-9_]*)/g)?.reduce((storage: { urlParameters: any; currentRequestedPath: string; }, urlParameterWithColon: string) => {
             const urlParameter = urlParameterWithColon.replace(":", "");
             const partTillParameter = route.path.split(urlParameterWithColon)[0];
-            const urlParameterValue = storage.currentRequestedPath.replace(partTillParameter, "").match(/([a-zA-Z0-9_]*)/g)?.[0];
+            const urlParameterValue = storage.currentRequestedPath.replace(
+                new RegExp(partTillParameter.replace(/:([a-zA-Z0-9_]*)/, ".*?")),
+                ""
+            ).match(/([a-zA-Z0-9_]*)/g)?.[0];
             const currentRequestedPath = storage.currentRequestedPath.replace(/:([a-zA-Z0-9_]*)/, "");
 
             return {
@@ -116,6 +119,13 @@ export default class Aqua {
     }
 
     private async respondToRequest(req: ServerRequest, requestedPath: string, route: Route, usesURLParameters: boolean = false) {
+        const connectedURLParameters = usesURLParameters ? this.connectURLParameters(route, requestedPath) : {};
+
+        if (Object.values(connectedURLParameters).find((parameterValue) => parameterValue === "") !== undefined) {
+            req.respond({ status: 404, body: "No registered route found." });
+            return;
+        }
+
         const userFriendlyRequest: Request = {
             raw: req,
             url: req.url,
@@ -124,7 +134,7 @@ export default class Aqua {
             query: this.parseQuery(req),
             body: await this.parseBody(req),
             cookies: this.parseCookies(req),
-            parameters: usesURLParameters ? this.connectURLParameters(route, requestedPath) : {},
+            parameters: connectedURLParameters,
             _responseHeaders: new Headers(),
             _responseStatusCode: 200,
             setStatusCode(statusCode: number) {
@@ -185,7 +195,7 @@ export default class Aqua {
         this.routes[method + path] = {
             path,
             usesURLParameters,
-            urlParameterRegex: usesURLParameters ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/, "([^\/]*)")) : undefined,
+            urlParameterRegex: usesURLParameters ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^\/]*)")) : undefined,
             responseHandler
         };
         return this;
@@ -201,3 +211,10 @@ export default class Aqua {
         return this;
     }
 }
+
+const app = new Aqua(3000);
+
+app.get("/api/:hello/:okay", req => {
+    /* console.log(req.parameters); */
+    return "";
+});
