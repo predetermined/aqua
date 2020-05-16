@@ -1,9 +1,19 @@
 import { serve, Server, ServerRequest } from "https://deno.land/std@v0.42.0/http/server.ts";
 import Router from "./router.ts";
 
+type ResponseHandler = (req: Request) => any;
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
+type Middleware = (req: Request, response: Response) => Response;
+type RawResponse = string | Response;
 
-type Request = {
+interface Response {
+    statusCode?: number;
+    headers?: { [name: string]: string; };
+    cookies?: { [name: string]: string; };
+    content: string;
+};
+
+export interface Request {
     raw: ServerRequest;
     url: string;
     method: Method;
@@ -12,27 +22,18 @@ type Request = {
     body: {};
     cookies: {};
     parameters: { [parameter: string]: string; };
-    _responseHeaders: Headers;
-    _responseStatusCode: number;
-    setStatusCode(statusCode: number): void;
-    setHeader(name: string, value: string): void;
-    setCookie(name: string, value: string): void;
 };
 
-type ResponseHandler = (req: Request) => any;
-
-export type Route = {
+export interface Route {
     path: string;
     usesURLParameters: boolean;
     urlParameterRegex?: RegExp;
     responseHandler: ResponseHandler;
-}
+};
 
-type Options = {
+export interface Options {
     ignoreTrailingSlash?: boolean;
-}
-
-type Middleware = (req: Request, respondValue: string) => string;
+};
 
 export default class Aqua {
     private readonly server: Server;
@@ -134,27 +135,31 @@ export default class Aqua {
             query: this.parseQuery(req),
             body: await this.parseBody(req),
             cookies: this.parseCookies(req),
-            parameters: connectedURLParameters,
-            _responseHeaders: new Headers(),
-            _responseStatusCode: 200,
-            setStatusCode(statusCode: number) {
-                this._responseStatusCode = statusCode;
-            },
-            setHeader(name: string, value: string) {
-                this._responseHeaders.append(name, value);
-            },
-            setCookie(name: string, value: string) {
-                this._responseHeaders.append("Set-Cookie", `${name}=${value}`);
-            }
+            parameters: connectedURLParameters
         }
 
-        const respondValue = this.middlewares.reduce((respondValue: string, middleware: Middleware): string => {
-            if (!respondValue) return respondValue;
+        const rawResponse: RawResponse = await route.responseHandler(userFriendlyRequest);
+        const formattedResponse: Response = typeof rawResponse === "string" ? { content: rawResponse } : rawResponse;
 
-            return middleware(userFriendlyRequest, respondValue);
-        }, await route.responseHandler(userFriendlyRequest));
+        if (!formattedResponse.content) return;
 
-        req.respond({ status: userFriendlyRequest._responseStatusCode, headers: userFriendlyRequest._responseHeaders, body: respondValue });
+        const responseAfterMiddlewares: Response = this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
+            if (!currentResponse) return currentResponse;
+
+            return middleware(userFriendlyRequest, currentResponse);
+        }, formattedResponse);
+        const headers: Headers = new Headers(formattedResponse.headers || {});
+
+        if (formattedResponse.cookies) {
+            for (const cookieName of Object.keys(formattedResponse.cookies))
+                headers.append("Set-Cookie", `${cookieName}=${formattedResponse.cookies[cookieName]}`);
+        }
+
+        req.respond({
+            headers,
+            status: responseAfterMiddlewares.statusCode,
+            body: responseAfterMiddlewares.content
+        });
     }
 
     private async handleRequests() {
@@ -182,7 +187,7 @@ export default class Aqua {
         return this;
     }
 
-    public route(path: string, method: Method, responseHandler: (req: Request) => any) {
+    public route(path: string, method: Method, responseHandler: (req: Request) => RawResponse) {
         if (!path.startsWith("/")) {
             console.warn("Routes must start with a slash");
             return;
@@ -201,12 +206,12 @@ export default class Aqua {
         return this;
     }
 
-    public get(path: string, callback: (req: Request) => any) {
+    public get(path: string, callback: (req: Request) => RawResponse) {
         this.route(path, "GET", callback);
         return this;
     }
 
-    public post(path: string, callback: (req: Request) => any) {
+    public post(path: string, callback: (req: Request) => RawResponse) {
         this.route(path, "POST", callback);
         return this;
     }
