@@ -211,10 +211,3 @@ export default class Aqua {
         return this;
     }
 }
-
-const app = new Aqua(3000);
-
-app.get("/api/:hello/:okay", req => {
-    /* console.log(req.parameters); */
-    return "";
-});
