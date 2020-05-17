@@ -5,6 +5,7 @@ Aqua is a minimal and fast web framework.
 - Immediate parsing of the request body, query and the cookie string
 - Middleware functions
 - Possibility for route changes while runtime
+- URL parameters
 
 ## Example usage
 ```typescript
@@ -68,3 +69,13 @@ app.get("/", (req) => {
 ```
 Cookies and headers are just getting appended, so no information is getting lost by providing custom ones.
 However, you can still overwrite existing headers.
+
+## More examples
+
+### Respond with the content of a file
+```typescript
+app.get("/", async (req) => {
+    return await app.render("index.html");
+});
+```
+Please note that you must run your application with the `--allow-read` flag.
