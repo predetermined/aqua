@@ -1,7 +1,7 @@
 import { serve, Server, ServerRequest } from "https://deno.land/std@v0.42.0/http/server.ts";
 import Router from "./router.ts";
 
-type ResponseHandler = (req: Request) => any;
+type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 type Middleware = (req: Request, response: Response) => Response;
 type RawResponse = string | Response;
@@ -48,6 +48,14 @@ export default class Aqua {
         this.handleRequests();
     }
 
+    public async render(filePath: string): Promise<string> {
+        try {
+            return new TextDecoder().decode(await Deno.readFile(filePath));
+        }catch {
+            return "Could not render file.";
+        }
+    }
+
     private async parseBody(req: ServerRequest): Promise<{}> {
         const buffer: Uint8Array = new Uint8Array(req.contentLength || 0);
         const lengthRead: number = await req.body.read(buffer) || 0;
@@ -55,11 +63,11 @@ export default class Aqua {
         let body: {} = {};
 
         try {
-            body = JSON.parse(rawBody.toString());
+            body = JSON.parse(rawBody);
         }catch(error) {
-            if (rawBody.toString().includes(`name="`)) {
-                body = (rawBody.toString().match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || [])
-                .reduce((fields: object, field: string): object => {
+            if (rawBody.includes(`name="`)) {
+                body = (rawBody.match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || [])
+                .reduce((fields: {}, field: string): {} => {
                     if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
 
                     return {
@@ -74,12 +82,11 @@ export default class Aqua {
     }
 
     private parseQuery(req: ServerRequest): {} {
-        const queryURL = req.url.replace(/(.*)\?/, "");
-        const queryString = queryURL.split("&");
+        const queryURL: string = req.url.replace(/(.*)\?/, "");
+        const queryString: string[] = queryURL.split("&");
 
-        return queryString.reduce((queries: object, query: string): object => {
-            if (!query)
-                return queries;
+        return queryString.reduce((queries: {}, query: string): {} => {
+            if (!query) return queries;
 
             return {
                 ...queries,
@@ -89,9 +96,9 @@ export default class Aqua {
     }
 
     private parseCookies(req: ServerRequest): {} {
-        const rawCookieString = req.headers.get("cookie");
+        const rawCookieString: string | null = req.headers.get("cookie");
 
-        return rawCookieString && rawCookieString.split(";").reduce((cookies: any, cookie: string): any => {
+        return rawCookieString && rawCookieString.split(";").reduce((cookies: {}, cookie: string): {} => {
             return {
                 ...cookies,
                 [cookie.split("=")[0].trimLeft()]: cookie.split("=")[1]
@@ -187,7 +194,7 @@ export default class Aqua {
         return this;
     }
 
-    public route(path: string, method: Method, responseHandler: (req: Request) => RawResponse) {
+    public route(path: string, method: Method, responseHandler: ResponseHandler) {
         if (!path.startsWith("/")) {
             console.warn("Routes must start with a slash");
             return;
@@ -206,13 +213,13 @@ export default class Aqua {
         return this;
     }
 
-    public get(path: string, callback: (req: Request) => RawResponse) {
-        this.route(path, "GET", callback);
+    public get(path: string, responseHandler: ResponseHandler) {
+        this.route(path, "GET", responseHandler);
         return this;
     }
 
-    public post(path: string, callback: (req: Request) => RawResponse) {
-        this.route(path, "POST", callback);
+    public post(path: string, responseHandler: ResponseHandler) {
+        this.route(path, "POST", responseHandler);
         return this;
     }
 }
