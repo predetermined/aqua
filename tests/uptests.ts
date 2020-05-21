@@ -41,3 +41,11 @@ Deno.test("URL parameters working?", async () => {
         }, 250);
     });
 });
+
+Deno.test("Custom fallback handler working?", async () => {
+    app.provideFallback((req) => "Nothing to see here");
+
+    const content = await request(`/this_route_doesnt_exist`);
+    
+    if (content !== "Nothing to see here") throw Error("Custom fallback handlers don't seem to work");
+});
