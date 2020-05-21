@@ -40,6 +40,7 @@ export default class Aqua {
     private routes: { [path: string]: Route } = {};
     private options: Options = {};
     private middlewares: Middleware[] = [];
+    private fallbackHandler: ResponseHandler | null = null;
 
     constructor(port: number, options?: Options) {
         this.server = serve({ port });
@@ -126,34 +127,27 @@ export default class Aqua {
         }, { urlParameters: {}, currentRequestedPath: requestedPath }).urlParameters;
     }
 
-    private async respondToRequest(req: ServerRequest, requestedPath: string, route: Route, usesURLParameters: boolean = false) {
-        const connectedURLParameters = usesURLParameters ? this.connectURLParameters(route, requestedPath) : {};
+    private formatRawResponse(rawResponse: RawResponse): Response {
+        return typeof rawResponse === "string" ? { content: rawResponse } : rawResponse;
+    }
 
-        if (Object.values(connectedURLParameters).find((parameterValue) => parameterValue === "") !== undefined) {
-            req.respond({ status: 404, body: "No registered route found." });
-            return;
+    private async respondToRequest(req: Request, requestedPath: string, route: Route, usesURLParameters: boolean = false) {
+         if (usesURLParameters) {
+            req.parameters = this.connectURLParameters(route, requestedPath);
+
+            if (Object.values(req.parameters).find((parameterValue) => parameterValue === "") !== undefined) {
+                await this.respondWithNoRouteFound(req);
+                return;
+            }
         }
 
-        const userFriendlyRequest: Request = {
-            raw: req,
-            url: req.url,
-            headers: req.headers,
-            method: (req.method as Method),
-            query: this.parseQuery(req),
-            body: await this.parseBody(req),
-            cookies: this.parseCookies(req),
-            parameters: connectedURLParameters
-        }
-
-        const rawResponse: RawResponse = await route.responseHandler(userFriendlyRequest);
-        const formattedResponse: Response = typeof rawResponse === "string" ? { content: rawResponse } : rawResponse;
-
+        const formattedResponse: Response = this.formatRawResponse(await route.responseHandler(req));
         if (!formattedResponse.content) return;
 
         const responseAfterMiddlewares: Response = this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
             if (!currentResponse) return currentResponse;
 
-            return middleware(userFriendlyRequest, currentResponse);
+            return middleware(req, currentResponse);
         }, formattedResponse);
         const headers: Headers = new Headers(formattedResponse.headers || {});
 
@@ -162,17 +156,49 @@ export default class Aqua {
                 headers.append("Set-Cookie", `${cookieName}=${formattedResponse.cookies[cookieName]}`);
         }
 
-        req.respond({
+        req.raw.respond({
             headers,
             status: responseAfterMiddlewares.statusCode,
             body: responseAfterMiddlewares.content
         });
     }
 
-    private async handleRequests() {
-        for await (const req of this.server) {
-            if (this.options.ignoreTrailingSlash) req.url = req.url.replace(/\/$/, "") + "/";
+    private async respondWithNoRouteFound(req: Request): Promise<void> {
+        if (this.fallbackHandler) {
+            const fallbackResponse: Response = this.formatRawResponse(await this.fallbackHandler(req));
+            fallbackResponse.statusCode = fallbackResponse.statusCode || 404;
+            const headers: Headers = new Headers(fallbackResponse.headers || {});
 
+            if (fallbackResponse.cookies) {
+                for (const cookieName of Object.keys(fallbackResponse.cookies))
+                    headers.append("Set-Cookie", `${cookieName}=${fallbackResponse.cookies[cookieName]}`);
+            }
+
+            req.raw.respond({
+                headers,
+                status: fallbackResponse.statusCode,
+                body: fallbackResponse.content
+            });
+            return;
+        }
+
+        req.raw.respond({ status: 404, body: "No registered route found." });
+    }
+
+    private async handleRequests() {
+        for await (const rawRequest of this.server) {
+            if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
+
+            const req: Request = {
+                raw: rawRequest,
+                url: rawRequest.url,
+                headers: rawRequest.headers,
+                method: (rawRequest.method as Method),
+                query: this.parseQuery(rawRequest),
+                body: await this.parseBody(rawRequest),
+                cookies: this.parseCookies(rawRequest),
+                parameters: {}
+            };
             const requestedPath = Router.parseRequestPath(req.url);
 
             if (!this.routes[req.method + requestedPath]) {
@@ -181,7 +207,7 @@ export default class Aqua {
                 if (matchingRouteWithURLParameters) {
                     await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
                 }else {
-                    req.respond({ status: 404, body: "No registered route found." });
+                    await this.respondWithNoRouteFound(req);
                 }
             }else {
                 await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
@@ -189,17 +215,18 @@ export default class Aqua {
         }
     }
 
-    public register(middleware: Middleware) {
+    public provideFallback(responseHandler: ResponseHandler): Aqua {
+        this.fallbackHandler = responseHandler;
+        return this;
+    }
+
+    public register(middleware: Middleware): Aqua {
         this.middlewares.push(middleware);
         return this;
     }
 
-    public route(path: string, method: Method, responseHandler: ResponseHandler) {
-        if (!path.startsWith("/")) {
-            console.warn("Routes must start with a slash");
-            return;
-        }
-
+    public route(path: string, method: Method, responseHandler: ResponseHandler): Aqua {
+        if (!path.startsWith("/")) throw Error("Routes must start with a slash");
         if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
 
         const usesURLParameters = /:[a-zA-Z]/.test(path);
@@ -213,12 +240,12 @@ export default class Aqua {
         return this;
     }
 
-    public get(path: string, responseHandler: ResponseHandler) {
+    public get(path: string, responseHandler: ResponseHandler): Aqua {
         this.route(path, "GET", responseHandler);
         return this;
     }
 
-    public post(path: string, responseHandler: ResponseHandler) {
+    public post(path: string, responseHandler: ResponseHandler): Aqua {
         this.route(path, "POST", responseHandler);
         return this;
     }
