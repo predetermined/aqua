@@ -78,4 +78,12 @@ app.get("/", async (req) => {
     return await app.render("index.html");
 });
 ```
-Please note that you must run your application with the `--allow-read` flag.
+_Please note that you must run your application with the `--allow-read` flag._
+
+### Provide own fallback handler
+Your provided fallback handler will be executed if no route has been found.
+```typescript
+app.provideFallback((req) => {
+    return "No page found, sorry!";
+});
+```
