@@ -114,7 +114,7 @@ export default class Aqua {
             const urlParameterValue = storage.currentRequestedPath.replace(
                 new RegExp(partTillParameter.replace(/:([a-zA-Z0-9_]*)/, ".*?")),
                 ""
-            ).match(/([a-zA-Z0-9_]*)/g)?.[0];
+            ).match(/([^\/]*)/g)?.[0];
             const currentRequestedPath = storage.currentRequestedPath.replace(/:([a-zA-Z0-9_]*)/, "");
 
             return {
