@@ -6,34 +6,34 @@ type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS"
 type Middleware = (req: Request, response: Response) => Response;
 type RawResponse = string | Response;
 
-interface Response {
+export interface Response {
     statusCode?: number;
     headers?: { [name: string]: string; };
     cookies?: { [name: string]: string; };
     content: string;
-};
+}
 
 export interface Request {
     raw: ServerRequest;
     url: string;
     method: Method;
     headers: Headers;
-    query: {};
-    body: {};
-    cookies: {};
-    parameters: { [parameter: string]: string; };
-};
+    query: { [name: string]: string; };
+    body: { [name: string]: string; };
+    cookies: { [name: string]: string; };
+    parameters: { [name: string]: string; };
+}
 
 export interface Route {
     path: string;
     usesURLParameters: boolean;
     urlParameterRegex?: RegExp;
     responseHandler: ResponseHandler;
-};
+}
 
 export interface Options {
     ignoreTrailingSlash?: boolean;
-};
+}
 
 export default class Aqua {
     private readonly server: Server;
@@ -83,11 +83,11 @@ export default class Aqua {
     }
 
     private parseQuery(req: ServerRequest): {} {
-        const queryURL: string = req.url.replace(/(.*)\?/, "");
+        const queryURL: string = req.url.includes("?") && req.url.replace(/(.*)\?/, "") || "";
         const queryString: string[] = queryURL.split("&");
 
         return queryString.reduce((queries: {}, query: string): {} => {
-            if (!query) return queries;
+            if (!query || !query.split("=")?.[0] || query.split("=")?.[1] === undefined) return queries;
 
             return {
                 ...queries,
@@ -142,7 +142,7 @@ export default class Aqua {
         }
 
         const formattedResponse: Response = this.formatRawResponse(await route.responseHandler(req));
-        if (!formattedResponse.content) return;
+        if (!formattedResponse || formattedResponse.content === undefined) throw Error(`Invalid or no response content provided for route '${route.path}'`);
 
         const responseAfterMiddlewares: Response = this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
             if (!currentResponse) return currentResponse;
@@ -193,7 +193,7 @@ export default class Aqua {
                 raw: rawRequest,
                 url: rawRequest.url,
                 headers: rawRequest.headers,
-                method: (rawRequest.method as Method),
+                method: (rawRequest.method.toUpperCase() as Method),
                 query: this.parseQuery(rawRequest),
                 body: await this.parseBody(rawRequest),
                 cookies: this.parseCookies(rawRequest),
@@ -231,7 +231,7 @@ export default class Aqua {
 
         const usesURLParameters = /:[a-zA-Z]/.test(path);
 
-        this.routes[method + path] = {
+        this.routes[method.toUpperCase() + path] = {
             path,
             usesURLParameters,
             urlParameterRegex: usesURLParameters ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^\/]*)")) : undefined,
