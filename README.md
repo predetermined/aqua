@@ -21,13 +21,13 @@ app.get("/", (req) => {
 ## Routing
 You can either use the short-form syntax for the `GET` and `POST` method
 ```typescript
-app.get("/", (req) => "Hello, World!")
-app.post("/", (req) => "Hello, World!")
+app.get("/", (req) => "Hello, World!");
+app.post("/", (req) => "Hello, World!");
 ```
 
 or use the route function
 ```typescript
-app.route("/", "GET", (req) => "Hello, World!")
+app.route("/", "GET", (req) => "Hello, World!");
 ```
 
 ## Middlewares
@@ -85,5 +85,12 @@ Your provided fallback handler will be executed if no route has been found.
 ```typescript
 app.provideFallback((req) => {
     return "No page found, sorry!";
+});
+```
+
+### Redirect a request
+```typescript
+app.get("/dashboard", (req) => {
+    return { redirect: "/login" };
 });
 ```
