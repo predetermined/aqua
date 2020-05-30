@@ -5,12 +5,22 @@ type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 type Middleware = (req: Request, response: Response) => Response;
 type RawResponse = string | Response;
+type Response = ContentResponse | RedirectResponse;
 
-export interface Response {
+export interface ContentResponse {
     statusCode?: number;
     headers?: { [name: string]: string; };
     cookies?: { [name: string]: string; };
+    redirect?: string;
     content: string;
+}
+
+export interface RedirectResponse {
+    statusCode?: number;
+    headers?: { [name: string]: string; };
+    cookies?: { [name: string]: string; };
+    redirect: string;
+    content?: string;
 }
 
 export interface Request {
@@ -142,7 +152,11 @@ export default class Aqua {
         }
 
         const formattedResponse: Response = this.formatRawResponse(await route.responseHandler(req));
-        if (!formattedResponse || formattedResponse.content === undefined) throw Error(`Invalid or no response content provided for route '${route.path}'`);
+
+        if (!formattedResponse) {
+            req.raw.respond({ body: "No response content provided." });
+            return;
+        }
 
         const responseAfterMiddlewares: Response = this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
             if (!currentResponse) return currentResponse;
@@ -156,10 +170,15 @@ export default class Aqua {
                 headers.append("Set-Cookie", `${cookieName}=${formattedResponse.cookies[cookieName]}`);
         }
 
+        if (formattedResponse.redirect) {
+            headers.append("Location", formattedResponse.redirect);
+            responseAfterMiddlewares.statusCode = responseAfterMiddlewares.statusCode || 301;
+        }
+
         req.raw.respond({
             headers,
             status: responseAfterMiddlewares.statusCode,
-            body: responseAfterMiddlewares.content
+            body: responseAfterMiddlewares.content ?? "No response content provided."
         });
     }
 
