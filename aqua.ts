@@ -178,14 +178,22 @@ export default class Aqua {
         req.raw.respond({
             headers,
             status: responseAfterMiddlewares.statusCode,
-            body: responseAfterMiddlewares.content ?? "No response content provided."
+            body: responseAfterMiddlewares.content || "No response content provided."
         });
     }
 
     private async respondWithNoRouteFound(req: Request): Promise<void> {
         if (this.fallbackHandler) {
             const fallbackResponse: Response = this.formatRawResponse(await this.fallbackHandler(req));
-            fallbackResponse.statusCode = fallbackResponse.statusCode || 404;
+
+            if (!fallbackResponse) {
+                req.raw.respond({ status: 404, body: "No registered route found." });
+                return;
+            }
+
+            fallbackResponse.statusCode = fallbackResponse.redirect
+                ? fallbackResponse.statusCode || 301
+                : fallbackResponse.statusCode || 404;
             const headers: Headers = new Headers(fallbackResponse.headers || {});
 
             if (fallbackResponse.cookies) {
@@ -193,10 +201,13 @@ export default class Aqua {
                     headers.append("Set-Cookie", `${cookieName}=${fallbackResponse.cookies[cookieName]}`);
             }
 
+            if (fallbackResponse.redirect)
+                headers.append("Location", fallbackResponse.redirect);
+
             req.raw.respond({
                 headers,
                 status: fallbackResponse.statusCode,
-                body: fallbackResponse.content
+                body: fallbackResponse.content || "No fallback response content provided."
             });
             return;
         }
