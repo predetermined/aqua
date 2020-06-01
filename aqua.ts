@@ -1,4 +1,4 @@
-import { serve, Server, ServerRequest } from "https://deno.land/std@v0.42.0/http/server.ts";
+import { serve, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@v0.42.0/http/server.ts";
 import Router from "./router.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
@@ -6,6 +6,10 @@ type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS"
 type Middleware = (req: Request, res: Response) => Response;
 type RawResponse = string | Response;
 export type Response = ContentResponse | RedirectResponse;
+
+interface ServerRequestWithRawRespond extends ServerRequest {
+    rawRespond: (res: ServerResponse) => Promise<void>;
+}
 
 interface ContentResponse {
     statusCode?: number;
@@ -43,6 +47,7 @@ export interface Route {
 
 export interface Options {
     ignoreTrailingSlash?: boolean;
+    log?: boolean;
 }
 
 export default class Aqua {
@@ -57,6 +62,7 @@ export default class Aqua {
         this.options = options || {};
 
         this.handleRequests();
+        if (this.options.log) console.log(`Server started (http://localhost:${port})`);
     }
 
     public async render(filePath: string): Promise<string> {
@@ -230,6 +236,14 @@ export default class Aqua {
                 parameters: {}
             };
             const requestedPath = Router.parseRequestPath(req.url);
+
+            if (this.options.log) {
+                (req.raw as ServerRequestWithRawRespond).rawRespond = rawRequest.respond;
+                req.raw.respond = async (res: ServerResponse) => {
+                    console.log(`\x1b[33m${req.method}`, `\x1b[0m${requestedPath}`, `-> \x1b[36m${res.status || 200}\x1b[0m`);
+                    await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
+                }
+            }
 
             if (!this.routes[req.method + requestedPath]) {
                 const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
