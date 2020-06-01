@@ -3,11 +3,11 @@ import Router from "./router.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
-type Middleware = (req: Request, response: Response) => Response;
+type Middleware = (req: Request, res: Response) => Response;
 type RawResponse = string | Response;
-type Response = ContentResponse | RedirectResponse;
+export type Response = ContentResponse | RedirectResponse;
 
-export interface ContentResponse {
+interface ContentResponse {
     statusCode?: number;
     headers?: { [name: string]: string; };
     cookies?: { [name: string]: string; };
@@ -15,7 +15,7 @@ export interface ContentResponse {
     content: string;
 }
 
-export interface RedirectResponse {
+interface RedirectResponse {
     statusCode?: number;
     headers?: { [name: string]: string; };
     cookies?: { [name: string]: string; };
