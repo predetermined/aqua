@@ -73,7 +73,7 @@ export default class Aqua {
         }
     }
 
-    private async parseBody(req: ServerRequest): Promise<{}> {
+    private async parseBody(req: ServerRequest): Promise<{ [name: string]: string; }> {
         const buffer: Uint8Array = new Uint8Array(req.contentLength || 0);
         const lengthRead: number = await req.body.read(buffer) || 0;
         const rawBody: string = new TextDecoder().decode(buffer.subarray(0, lengthRead));
@@ -98,7 +98,7 @@ export default class Aqua {
         return body;
     }
 
-    private parseQuery(req: ServerRequest): {} {
+    private parseQuery(req: ServerRequest): { [name: string]: string; } {
         const queryURL: string = req.url.includes("?") && req.url.replace(/(.*)\?/, "") || "";
         const queryString: string[] = queryURL.split("&");
 
@@ -112,7 +112,7 @@ export default class Aqua {
         }, {}) || {};
     }
 
-    private parseCookies(req: ServerRequest): {} {
+    private parseCookies(req: ServerRequest): { [name: string]: string; } {
         const rawCookieString: string | null = req.headers.get("cookie");
 
         return rawCookieString && rawCookieString.split(";").reduce((cookies: {}, cookie: string): {} => {
@@ -123,7 +123,7 @@ export default class Aqua {
         }, {}) || {};
     }
 
-    private connectURLParameters(route: Route, requestedPath: string): {} {
+    private connectURLParameters(route: Route, requestedPath: string): { [name: string]: string; } {
         return route.path.match(/:([a-zA-Z0-9_]*)/g)?.reduce((storage: { urlParameters: any; currentRequestedPath: string; }, urlParameterWithColon: string) => {
             const urlParameter = urlParameterWithColon.replace(":", "");
             const partTillParameter = route.path.split(urlParameterWithColon)[0];
