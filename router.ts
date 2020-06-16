@@ -1,4 +1,4 @@
-import { Route } from "./aqua.ts";
+import { Route, RegexRoute } from "./aqua.ts";
 
 export default class Router {
     public static parseRequestPath(url: string) {
@@ -12,5 +12,11 @@ export default class Router {
 
             return requestedPath.replace(route.urlParameterRegex as RegExp, "").length === 0;
         }) || ""];
+    }
+
+    public static findMatchingRegexRoute(requestedPath: string, regexRoutes: RegexRoute[]) {
+        return regexRoutes.find((regexRoute: RegexRoute) => {
+            return requestedPath.replace(regexRoute.path, "").length === 0;
+        });
     }
 }

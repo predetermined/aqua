@@ -36,12 +36,18 @@ export interface Request {
     body: { [name: string]: string; };
     cookies: { [name: string]: string; };
     parameters: { [name: string]: string; };
+    matches: string[];
 }
 
 export interface Route {
     path: string;
     usesURLParameters: boolean;
     urlParameterRegex?: RegExp;
+    responseHandler: ResponseHandler;
+}
+
+export interface RegexRoute {
+    path: RegExp;
     responseHandler: ResponseHandler;
 }
 
@@ -53,6 +59,7 @@ export interface Options {
 export default class Aqua {
     private readonly server: Server;
     private routes: { [path: string]: Route } = {};
+    private regexRoutes: RegexRoute[] = [];
     private options: Options = {};
     private middlewares: Middleware[] = [];
     private fallbackHandler: ResponseHandler | null = null;
@@ -84,14 +91,14 @@ export default class Aqua {
         }catch(error) {
             if (rawBody.includes(`name="`)) {
                 body = (rawBody.match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || [])
-                .reduce((fields: {}, field: string): {} => {
-                    if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
+                    .reduce((fields: {}, field: string): {} => {
+                        if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
 
-                    return {
-                        ...fields,
-                        [/name="(.*?)"/.exec(field)?.[1] || ""]: field.match(/(.*?)(?=(\s|\n|\r)*---)/)?.[0]
-                    }
-                }, {});
+                        return {
+                            ...fields,
+                            [/name="(.*?)"/.exec(field)?.[1] || ""]: field.match(/(.*?)(?=(\s|\n|\r)*---)/)?.[0]
+                        }
+                    }, {});
             }
         }
 
@@ -147,15 +154,22 @@ export default class Aqua {
         return typeof rawResponse === "string" ? { content: rawResponse } : rawResponse;
     }
 
-    private async respondToRequest(req: Request, requestedPath: string, route: Route, usesURLParameters: boolean = false) {
-         if (usesURLParameters) {
-            req.parameters = this.connectURLParameters(route, requestedPath);
+    private isRegexRoute(route: Route | RegexRoute): boolean {
+        return route.path instanceof RegExp;
+    }
+
+    private async respondToRequest(req: Request, requestedPath: string, route: Route | RegexRoute, usesURLParameters: boolean = false) {
+        if (usesURLParameters) {
+            req.parameters = this.connectURLParameters(route as Route, requestedPath);
 
             if (Object.values(req.parameters).find((parameterValue) => parameterValue === "") !== undefined) {
                 await this.respondWithNoRouteFound(req);
                 return;
             }
         }
+
+        if (this.isRegexRoute(route))
+            req.matches = (requestedPath.match(route.path) as string[]).slice(1) || [];
 
         const formattedResponse: Response = this.formatRawResponse(await route.responseHandler(req));
 
@@ -233,7 +247,8 @@ export default class Aqua {
                 query: this.parseQuery(rawRequest),
                 body: await this.parseBody(rawRequest),
                 cookies: this.parseCookies(rawRequest),
-                parameters: {}
+                parameters: {},
+                matches: []
             };
             const requestedPath = Router.parseRequestPath(req.url);
 
@@ -250,9 +265,17 @@ export default class Aqua {
 
                 if (matchingRouteWithURLParameters) {
                     await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
-                }else {
-                    await this.respondWithNoRouteFound(req);
+                    continue;
                 }
+
+                const matchingRegexRoute = Router.findMatchingRegexRoute(requestedPath, this.regexRoutes);
+
+                if (matchingRegexRoute) {
+                    await this.respondToRequest(req, requestedPath, matchingRegexRoute);
+                    continue;
+                }
+
+                await this.respondWithNoRouteFound(req);
             }else {
                 await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
             }
@@ -269,7 +292,12 @@ export default class Aqua {
         return this;
     }
 
-    public route(path: string, method: Method, responseHandler: ResponseHandler): Aqua {
+    public route(path: string | RegExp, method: Method, responseHandler: ResponseHandler): Aqua {
+        if (path instanceof RegExp) {
+            this.regexRoutes.push({ path, responseHandler });
+            return this;
+        }
+
         if (!path.startsWith("/")) throw Error("Routes must start with a slash");
         if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
 
@@ -284,12 +312,12 @@ export default class Aqua {
         return this;
     }
 
-    public get(path: string, responseHandler: ResponseHandler): Aqua {
+    public get(path: string | RegExp, responseHandler: ResponseHandler): Aqua {
         this.route(path, "GET", responseHandler);
         return this;
     }
 
-    public post(path: string, responseHandler: ResponseHandler): Aqua {
+    public post(path: string | RegExp, responseHandler: ResponseHandler): Aqua {
         this.route(path, "POST", responseHandler);
         return this;
     }

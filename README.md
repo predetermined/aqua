@@ -94,3 +94,13 @@ app.get("/dashboard", (req) => {
     return { redirect: "/login" };
 });
 ```
+
+### Regex paths
+You can provide a RegExp object instead of a string and receive the matches.
+```typescript
+app.get(new RegExp("\/(.*)"), (req) => {
+    console.log(req.matches); // GET /hello-world -> [ "hello-world" ]
+
+    return "Hello, World!";
+});
+```

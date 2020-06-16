@@ -20,7 +20,7 @@ Deno.test("Middlewares working?", async () => {
     app.register((req, respondValue) => {
         return {
             ...respondValue,
-            content: respondValue.content.replace("REPLACE_ME", "Planet")
+            content: respondValue.content?.replace("REPLACE_ME", "Planet") || ""
         };
     });
     const content = await request();
@@ -46,6 +46,22 @@ Deno.test("Custom fallback handler working?", async () => {
     app.provideFallback((req) => "Nothing to see here");
 
     const content = await request(`/this_route_doesnt_exist`);
-    
+
     if (content !== "Nothing to see here") throw Error("Custom fallback handlers don't seem to work");
+});
+
+Deno.test("Regex routes working?", async () => {
+    app.get(new RegExp("\/hello-world\/(.*)"), (req) => JSON.stringify(req.matches));
+
+    const content = await request(`/hello-world/hello/okay`);
+
+    if (JSON.parse(content)[0] !== "hello/okay") throw Error("Regex routes don't seem to work");
+});
+
+Deno.test("Regex route priorities working?", async () => {
+    app.get("/hello-world/should-trigger-first", (req) => "First!");
+
+    const content = await request(`/hello-world/should-trigger-first`);
+
+    if (content !== "First!") throw Error("Regex route priorities don't seem to work");
 });
