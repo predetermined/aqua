@@ -114,7 +114,7 @@ export default class Aqua {
 
             return {
                 ...queries,
-                [query.split("=")?.[0]]: query.split("=")?.[1]
+                [decodeURIComponent(query.split("=")?.[0])]: decodeURIComponent(query.split("=")?.[1].replace(/\+/g, " "))
             }
         }, {}) || {};
     }

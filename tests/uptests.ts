@@ -42,6 +42,22 @@ Deno.test("URL parameters working?", async () => {
     });
 });
 
+Deno.test("URL query parameters working?", async () => {
+    app.route("/search", "GET", (req) => {
+        if (req.query.q !== "foo bar") throw Error("URL query parameters don't seem to work");
+        if (req.query.withCharsThatNeedEscaping !== "$&") throw Error("URL query parameters don't seem to work");
+        if (req.query.missing !== undefined) throw Error("URL query parameters don't seem to work");
+        return "Thanks for the search!";
+    });
+
+    const content = await request(`/search?q=foo+bar&withCharsThatNeedEscaping=%24%26`);
+    await new Promise((resolve) => {
+        setTimeout(() => {
+            resolve();
+        }, 250);
+    });
+});
+
 Deno.test("Custom fallback handler working?", async () => {
     app.provideFallback((req) => "Nothing to see here");
 
