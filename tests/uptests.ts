@@ -42,6 +42,15 @@ Deno.test("URL parameters working?", async () => {
     });
 });
 
+Deno.test("URL query decoding working?", async () => {
+    app.get("/search", (req) => {
+        return JSON.stringify(req.query);
+    });
+
+    const content = await request("/search?q=foo+bar&withCharsThatNeedEscaping=%24%26");
+    if (content !== `{"q":"foo bar","withCharsThatNeedEscaping":"$&"}`) throw Error("URL query decoding doesn't seem to work");
+});
+
 Deno.test("Custom fallback handler working?", async () => {
     app.provideFallback((req) => "Nothing to see here");
 
