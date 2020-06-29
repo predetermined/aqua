@@ -104,3 +104,31 @@ app.get(new RegExp("\/(.*)"), (req) => {
     return "Hello, World!";
 });
 ```
+
+### TLS
+You can enable TLS the following way:
+```typescript
+const app = new Aqua(3001, {
+    tls: {
+        hostname: "localhost",
+        certFile: "localhost.crt",
+        keyFile: "localhost.key"
+    }
+});
+```
+The example above would handle requests coming to `https://localhost:3001`.
+
+#### Handle HTTP and HTTPS requests
+You are able to provide the TLS certificate to a different port and let the default port still handle HTTP requests.
+```typescript
+const app = new Aqua(3001, {
+    tls: {
+        hostname: "localhost",
+        certFile: "localhost.crt",
+        keyFile: "localhost.key",
+        independentPort: 3002
+    }
+});
+```
+The example above would allow you to handle requests to `http://localhost:3001` and `https://localhost:3002`
+at the same time.
