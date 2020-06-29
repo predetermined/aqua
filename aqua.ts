@@ -1,4 +1,4 @@
-import { serve, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@v0.42.0/http/server.ts";
+import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@v0.42.0/http/server.ts";
 import Router from "./router.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
@@ -54,10 +54,16 @@ export interface RegexRoute {
 export interface Options {
     ignoreTrailingSlash?: boolean;
     log?: boolean;
+    tls?: {
+        independentPort?: number;
+        hostname?: string;
+        certFile: string;
+        keyFile: string;
+    }
 }
 
 export default class Aqua {
-    private readonly server: Server;
+    private readonly servers: Server[] = [];
     private routes: { [path: string]: Route } = {};
     private regexRoutes: RegexRoute[] = [];
     private options: Options = {};
@@ -65,9 +71,23 @@ export default class Aqua {
     private fallbackHandler: ResponseHandler | null = null;
 
     constructor(port: number, options?: Options) {
-        this.server = serve({ port });
-        this.options = options || {};
+        const onlyTLS = (options?.tls && !options.tls.independentPort) || options?.tls?.independentPort === port;
 
+        if (options?.tls) {
+            this.servers.push(serveTLS({
+                hostname: "localhost",
+                certFile: "./localhost.crt",
+                keyFile: "./localhost.key",
+                ...{
+                    ...options.tls,
+                    port: options.tls.independentPort || port
+                }
+            }));
+        }
+
+        if (!onlyTLS) this.servers.push(serve({ port }));
+
+        this.options = options || {};
         this.handleRequests();
         if (this.options.log) console.log(`Server started (http://localhost:${port})`);
     }
@@ -236,50 +256,52 @@ export default class Aqua {
     }
 
     private async handleRequests() {
-        for await (const rawRequest of this.server) {
-            if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
+        this.servers.forEach(async server => {
+            for await (const rawRequest of server) {
+                if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
 
-            const req: Request = {
-                raw: rawRequest,
-                url: rawRequest.url,
-                headers: rawRequest.headers,
-                method: (rawRequest.method.toUpperCase() as Method),
-                query: this.parseQuery(rawRequest),
-                body: await this.parseBody(rawRequest),
-                cookies: this.parseCookies(rawRequest),
-                parameters: {},
-                matches: []
-            };
-            const requestedPath = Router.parseRequestPath(req.url);
+                const req: Request = {
+                    raw: rawRequest,
+                    url: rawRequest.url,
+                    headers: rawRequest.headers,
+                    method: (rawRequest.method.toUpperCase() as Method),
+                    query: this.parseQuery(rawRequest),
+                    body: await this.parseBody(rawRequest),
+                    cookies: this.parseCookies(rawRequest),
+                    parameters: {},
+                    matches: []
+                };
+                const requestedPath = Router.parseRequestPath(req.url);
 
-            if (this.options.log) {
-                (req.raw as ServerRequestWithRawRespond).rawRespond = rawRequest.respond;
-                req.raw.respond = async (res: ServerResponse) => {
-                    console.log(`\x1b[33m${req.method}`, `\x1b[0m${requestedPath}`, `-> \x1b[36m${res.status || 200}\x1b[0m`);
-                    await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
+                if (this.options.log) {
+                    (req.raw as ServerRequestWithRawRespond).rawRespond = rawRequest.respond;
+                    req.raw.respond = async (res: ServerResponse) => {
+                        console.log(`\x1b[33m${req.method}`, `\x1b[0m${requestedPath}`, `-> \x1b[36m${res.status || 200}\x1b[0m`);
+                        await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
+                    }
+                }
+
+                if (!this.routes[req.method + requestedPath]) {
+                    const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
+
+                    if (matchingRouteWithURLParameters) {
+                        await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
+                        continue;
+                    }
+
+                    const matchingRegexRoute = Router.findMatchingRegexRoute(requestedPath, this.regexRoutes);
+
+                    if (matchingRegexRoute) {
+                        await this.respondToRequest(req, requestedPath, matchingRegexRoute as RegexRoute);
+                        continue;
+                    }
+
+                    await this.respondWithNoRouteFound(req);
+                }else {
+                    await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
                 }
             }
-
-            if (!this.routes[req.method + requestedPath]) {
-                const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
-
-                if (matchingRouteWithURLParameters) {
-                    await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
-                    continue;
-                }
-
-                const matchingRegexRoute = Router.findMatchingRegexRoute(requestedPath, this.regexRoutes);
-
-                if (matchingRegexRoute) {
-                    await this.respondToRequest(req, requestedPath, matchingRegexRoute);
-                    continue;
-                }
-
-                await this.respondWithNoRouteFound(req);
-            }else {
-                await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
-            }
-        }
+        });
     }
 
     public provideFallback(responseHandler: ResponseHandler): Aqua {
