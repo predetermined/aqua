@@ -63,6 +63,7 @@ export interface Options {
 }
 
 export default class Aqua {
+    private readonly textDecoder: TextDecoder;
     private readonly servers: Server[] = [];
     private routes: { [path: string]: Route } = {};
     private regexRoutes: RegexRoute[] = [];
@@ -87,14 +88,15 @@ export default class Aqua {
 
         if (!onlyTLS) this.servers.push(serve({ port }));
 
+        this.textDecoder = new TextDecoder();
         this.options = options || {};
-        this.handleRequests();
+        this.spinUpServers();
         if (this.options.log) console.log(`Server started (http://localhost:${port})`);
     }
 
     public async render(filePath: string): Promise<string> {
         try {
-            return new TextDecoder().decode(await Deno.readFile(filePath));
+            return this.textDecoder.decode(await Deno.readFile(filePath));
         }catch {
             return "Could not render file.";
         }
@@ -103,8 +105,10 @@ export default class Aqua {
     private async parseBody(req: ServerRequest): Promise<{ [name: string]: string; }> {
         const buffer: Uint8Array = new Uint8Array(req.contentLength || 0);
         const lengthRead: number = await req.body.read(buffer) || 0;
-        const rawBody: string = new TextDecoder().decode(buffer.subarray(0, lengthRead));
+        const rawBody: string = this.textDecoder.decode(buffer.subarray(0, lengthRead));
         let body: {} = {};
+
+        if (!rawBody) return {};
 
         try {
             body = JSON.parse(rawBody);
@@ -126,8 +130,9 @@ export default class Aqua {
     }
 
     private parseQuery(req: ServerRequest): { [name: string]: string; } {
-        const queryURL: string = req.url.includes("?") && req.url.replace(/(.*)\?/, "") || "";
-        const queryString: string[] = queryURL.split("&");
+        if (!req.url.includes("?")) return {};
+
+        const queryString: string[] = req.url.replace(/(.*)\?/, "").split("&");
 
         return queryString.reduce((queries: {}, query: string): {} => {
             if (!query || !query.split("=")?.[0] || query.split("=")?.[1] === undefined) return queries;
@@ -142,12 +147,14 @@ export default class Aqua {
     private parseCookies(req: ServerRequest): { [name: string]: string; } {
         const rawCookieString: string | null = req.headers.get("cookie");
 
-        return rawCookieString && rawCookieString.split(";").reduce((cookies: {}, cookie: string): {} => {
+        if (!rawCookieString) return {};
+
+        return rawCookieString.split(";").reduce((cookies: {}, cookie: string): {} => {
             return {
                 ...cookies,
                 [cookie.split("=")[0].trimLeft()]: cookie.split("=")[1]
             };
-        }, {}) || {};
+        }, {});
     }
 
     private connectURLParameters(route: Route, requestedPath: string): { [name: string]: string; } {
@@ -188,8 +195,7 @@ export default class Aqua {
             }
         }
 
-        if (this.isRegexRoute(route))
-            req.matches = (requestedPath.match(route.path) as string[]).slice(1) || [];
+        if (this.isRegexRoute(route)) req.matches = (requestedPath.match(route.path) as string[]).slice(1) || [];
 
         const formattedResponse: Response = this.formatRawResponse(await route.responseHandler(req));
 
@@ -198,11 +204,11 @@ export default class Aqua {
             return;
         }
 
-        const responseAfterMiddlewares: Response = this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
+        const responseAfterMiddlewares: Response = this.middlewares.length > 0 ? this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
             if (!currentResponse) return currentResponse;
 
             return middleware(req, currentResponse);
-        }, formattedResponse);
+        }, formattedResponse) : formattedResponse;
         const headers: Headers = new Headers(formattedResponse.headers || {});
 
         if (formattedResponse.cookies) {
@@ -255,53 +261,57 @@ export default class Aqua {
         req.raw.respond({ status: 404, body: "No registered route found." });
     }
 
-    private async handleRequests() {
-        this.servers.forEach(async server => {
-            for await (const rawRequest of server) {
-                if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
+    private spinUpServers() {
+        for (const server of this.servers) {
+            this.handleRequests(server);
+        }
+    }
 
-                const req: Request = {
-                    raw: rawRequest,
-                    url: rawRequest.url,
-                    headers: rawRequest.headers,
-                    method: (rawRequest.method.toUpperCase() as Method),
-                    query: this.parseQuery(rawRequest),
-                    body: await this.parseBody(rawRequest),
-                    cookies: this.parseCookies(rawRequest),
-                    parameters: {},
-                    matches: []
-                };
-                const requestedPath = Router.parseRequestPath(req.url);
+    private async handleRequests(server: Server) {
+        for await (const rawRequest of server) {
+            if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
 
-                if (this.options.log) {
-                    (req.raw as ServerRequestWithRawRespond).rawRespond = rawRequest.respond;
-                    req.raw.respond = async (res: ServerResponse) => {
-                        console.log(`\x1b[33m${req.method}`, `\x1b[0m${requestedPath}`, `-> \x1b[36m${res.status || 200}\x1b[0m`);
-                        await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
-                    }
-                }
+            const req: Request = {
+                raw: rawRequest,
+                url: rawRequest.url,
+                headers: rawRequest.headers,
+                method: (rawRequest.method.toUpperCase() as Method),
+                query: this.parseQuery(rawRequest),
+                body: await this.parseBody(rawRequest),
+                cookies: this.parseCookies(rawRequest),
+                parameters: {},
+                matches: []
+            };
+            const requestedPath = Router.parseRequestPath(req.url);
 
-                if (!this.routes[req.method + requestedPath]) {
-                    const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
-
-                    if (matchingRouteWithURLParameters) {
-                        await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
-                        continue;
-                    }
-
-                    const matchingRegexRoute = Router.findMatchingRegexRoute(requestedPath, this.regexRoutes);
-
-                    if (matchingRegexRoute) {
-                        await this.respondToRequest(req, requestedPath, matchingRegexRoute as RegexRoute);
-                        continue;
-                    }
-
-                    await this.respondWithNoRouteFound(req);
-                }else {
-                    await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
+            if (this.options.log) {
+                (req.raw as ServerRequestWithRawRespond).rawRespond = rawRequest.respond;
+                req.raw.respond = async (res: ServerResponse) => {
+                    console.log(`\x1b[33m${req.method}`, `\x1b[0m${requestedPath}`, `-> \x1b[36m${res.status || 200}\x1b[0m`);
+                    await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
                 }
             }
-        });
+
+            if (!this.routes[req.method + requestedPath]) {
+                const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
+
+                if (matchingRouteWithURLParameters) {
+                    await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
+                    continue;
+                }
+
+                const matchingRegexRoute = Router.findMatchingRegexRoute(requestedPath, this.regexRoutes);
+
+                if (matchingRegexRoute) {
+                    await this.respondToRequest(req, requestedPath, matchingRegexRoute as RegexRoute);
+                    continue;
+                }
+
+                await this.respondWithNoRouteFound(req);
+            }else {
+                await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
+            }
+        }
     }
 
     public provideFallback(responseHandler: ResponseHandler): Aqua {
