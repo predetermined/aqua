@@ -6,6 +6,7 @@ Aqua is a minimal and fast web framework.
 - Middleware functions
 - Possibility for route changes while runtime
 - URL parameters
+- [Blazing fast](#benchmarks)
 
 ## Example usage
 ```typescript
@@ -69,6 +70,18 @@ app.get("/", (req) => {
 ```
 Cookies and headers are just getting appended, so no information is getting lost by providing custom ones.
 However, you can still overwrite existing headers.
+
+## Benchmarks
+|Framework  | Avg RPS   | Router?
+|-----------|-----------|-----------
+| Deno HTTP | 23044     | No
+| **Aqua**  | **21617** | **Yes**
+| Drash     | 17295     | Yes
+| Fastro    | 16980     | Yes
+| Denotrain | 13677     | Yes
+| Attain    |  9914     | Yes
+
+_Tested on 2020/07/03 with the newest available version of each framework_
 
 ## More examples
 
