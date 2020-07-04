@@ -72,16 +72,14 @@ Cookies and headers are just getting appended, so no information is getting lost
 However, you can still overwrite existing headers.
 
 ## Benchmarks
-|Framework  | Avg RPS   | Router?
-|-----------|-----------|-----------
-| Deno HTTP | 23044     | No
-| **Aqua**  | **21617** | **Yes**
-| Drash     | 17295     | Yes
-| Fastro    | 16980     | Yes
-| Denotrain | 13677     | Yes
-| Attain    |  9914     | Yes
-
-_Tested on 2020/07/03 with the newest available version of each framework_
+|Framework  | Version   | Avg RPS   | Router?
+|-----------|-----------|-----------|-----------
+| Deno HTTP | 0.60.0    | 23145     | No
+| **Aqua**  | **1.0.0** | **21644** | **Yes**
+| Drash     | 1.0.7     | 19019     | Yes
+| Fastro    | 0.12.4    | 17991     | Yes
+| Denotrain | 0.5.2     | 14312     | Yes
+| Attain    | master    | 10401     | Yes
 
 ## More examples
 
