@@ -2,8 +2,8 @@ import Aqua from "../aqua.ts";
 
 const app = new Aqua(4000);
 
-async function request(suffix: string = "") {
-    const r = await fetch(`http://localhost:4000${suffix}`);
+async function request(suffix: string = "", options: any = {}) {
+    const r = await fetch(`http://localhost:4000${suffix}`, options);
 
     return await r.text();
 }
@@ -61,4 +61,21 @@ Deno.test("Regex route priorities working?", async () => {
 
     const content = await request(`/hello-world/should-trigger-first`);
     if (content !== "First!") throw Error("Regex route priorities don't seem to work");
+});
+
+Deno.test("Body parsing working if Object converted to JSON string?", async () => {
+    app.post("/test-json-body-parsing", (req) => req.body.test);
+
+    const content = await request(`/test-json-body-parsing`, { method: "post", body: JSON.stringify({ test: "hello" }) });
+    if (content !== "hello") throw Error("Body parsing of a object converted to a JSON string don't seem to work");
+});
+
+Deno.test("Body parsing working if passed FormData?", async () => {
+    app.post("/test-formdata-body-parsing", (req) => req.body.test);
+
+    const f = new FormData();
+    f.append("test", "hello");
+
+    const content = await request(`/test-formdata-body-parsing`, { method: "post", body: f });
+    if (content !== "hello") throw Error("Body parsing of FormData don't seem to work");
 });
