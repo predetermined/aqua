@@ -1,13 +1,13 @@
 import { exec, OutputMode } from "https://deno.land/x/exec/mod.ts";
-import { serve } from "https://deno.land/std@master/http/server.ts";
-import Aqua from "https://deno.land/x/aqua@master/aqua.ts";
-import { Fastro } from "https://raw.githubusercontent.com/fastrodev/fastro/master/mod.ts";
+import { serve } from "https://deno.land/std@v0.60.0/http/server.ts";
+import Aqua from "https://deno.land/x/aqua@v1.0.0/aqua.ts";
+import { Fastro } from "https://deno.land/x/fastro@v0.12.4/mod.ts";
 import { App } from "https://deno.land/x/attain@master/mod.ts";
-import { Application, Router } from "https://deno.land/x/denotrain@master/mod.ts";
-import { Drash } from "https://deno.land/x/drash@master/mod.ts";
+import { Application, Router } from "https://deno.land/x/denotrain@v0.5.2/mod.ts";
+import { Drash } from "https://deno.land/x/drash@v1.0.7/mod.ts";
 
 class Benchmark {
-    private results: { name: string; result: { average: number; min: number; max: number } }[] = [];
+    private results: { name: string; result: { average: number; min: number; max: number; } }[] = [];
 
     public async test(name: string, port: number) {
         const { average, min, max }: { average: number; min: number; max: number; } = JSON.parse((await exec(`npx autocannon -c100 -j localhost:${port}`, { output: OutputMode.Capture })).output).requests;
@@ -49,7 +49,7 @@ await benchmark.test("aqua", 3001);
 
 // Fastro
 const fastro = new Fastro();
-fastro.get("/", (req) => {
+fastro.get("/", (req: any) => {
     req.send("Hello Deno!");
 });
 fastro.listen({ port: 3002 });
