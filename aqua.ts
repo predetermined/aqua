@@ -1,4 +1,4 @@
-import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@v0.42.0/http/server.ts";
+import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.60.0/http/server.ts";
 import Router from "./router.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
