@@ -1,4 +1,4 @@
-import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.60.0/http/server.ts";
+import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.61.0/http/server.ts";
 import Router from "./router.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
@@ -76,13 +76,10 @@ export default class Aqua {
 
         if (options?.tls) {
             this.servers.push(serveTLS({
-                hostname: "localhost",
-                certFile: "./localhost.crt",
-                keyFile: "./localhost.key",
-                ...{
-                    ...options.tls,
-                    port: options.tls.independentPort || port
-                }
+                hostname: options.tls.hostname || "localhost",
+                certFile: options.tls.certFile || "./localhost.crt",
+                keyFile: options.tls.keyFile || "./localhost.key",
+                port: options.tls.independentPort || port
             }));
         }
 
