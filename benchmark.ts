@@ -1,7 +1,7 @@
 import { exec, OutputMode } from "https://deno.land/x/exec/mod.ts";
-import { serve } from "https://deno.land/std@v0.60.0/http/server.ts";
-import Aqua from "https://deno.land/x/aqua@v1.0.0/aqua.ts";
-import { Fastro } from "https://deno.land/x/fastro@v0.12.4/mod.ts";
+import { serve } from "https://deno.land/std@v0.61.0/http/server.ts";
+import Aqua from "https://deno.land/x/aqua@v1.0.2/aqua.ts";
+import { Fastro } from "https://deno.land/x/fastro@v0.13.5/mod.ts";
 import { App } from "https://deno.land/x/attain@master/mod.ts";
 import { Application, Router } from "https://deno.land/x/denotrain@v0.5.2/mod.ts";
 import { Drash } from "https://deno.land/x/drash@v1.0.7/mod.ts";
@@ -76,7 +76,7 @@ await benchmark.test("denotrain", 3004);
 class HomeResource extends Drash.Http.Resource {
     static paths = ["/"];
     public GET() {
-        this.response.body = "Hello World! deno + Drash is cool!";
+        this.response.body = "Hello Deno";
         return this.response;
     }
 }
@@ -92,4 +92,5 @@ drash.run({
 });
 await benchmark.test("drash", 3005);
 
+console.clear();
 console.log(benchmark.result);
