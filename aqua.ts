@@ -100,6 +100,8 @@ export default class Aqua {
     }
 
     private async parseBody(req: ServerRequest): Promise<{ [name: string]: string; }> {
+        if (!req.contentLength) return {};
+
         const buffer: Uint8Array = new Uint8Array(req.contentLength || 0);
         const lengthRead: number = await req.body.read(buffer) || 0;
         const rawBody: string = this.textDecoder.decode(buffer.subarray(0, lengthRead));
@@ -273,9 +275,9 @@ export default class Aqua {
                 url: rawRequest.url,
                 headers: rawRequest.headers,
                 method: (rawRequest.method.toUpperCase() as Method),
-                query: this.parseQuery(rawRequest),
-                body: await this.parseBody(rawRequest),
-                cookies: this.parseCookies(rawRequest),
+                query: rawRequest.url.includes("?") ? this.parseQuery(rawRequest) : {},
+                body: rawRequest.contentLength ? await this.parseBody(rawRequest) : {},
+                cookies: rawRequest.headers.get("cookies") ? this.parseCookies(rawRequest) : {},
                 parameters: {},
                 matches: []
             };
