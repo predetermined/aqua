@@ -106,6 +106,14 @@ app.get("/dashboard", (req) => {
 });
 ```
 
+### Static routes
+You can register static routes by passing the path to the local folder and
+the public alias to the `serve` function.
+```javascript
+app.serve("mystaticfolder", "/public");
+// A GET request to /public/test.txt would serve the local file at mystaticfolder/test.txt
+```
+
 ### Regex paths
 You can provide a RegExp object instead of a string and receive the matches.
 ```typescript
