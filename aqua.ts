@@ -1,5 +1,6 @@
 import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.61.0/http/server.ts";
 import Router from "./router.ts";
+import ContentHandler from "./content_handler.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
@@ -51,6 +52,11 @@ export interface RegexRoute {
     responseHandler: ResponseHandler;
 }
 
+export interface StaticRoute {
+    folder: string;
+    path: string;
+}
+
 export interface Options {
     ignoreTrailingSlash?: boolean;
     log?: boolean;
@@ -69,6 +75,8 @@ export default class Aqua {
     private regexRoutes: RegexRoute[] = [];
     private options: Options = {};
     private middlewares: Middleware[] = [];
+    private staticRoutes: StaticRoute[] = [];
+
     private fallbackHandler: ResponseHandler | null = null;
 
     constructor(port: number, options?: Options) {
@@ -266,6 +274,18 @@ export default class Aqua {
         }
     }
 
+    private async respondToStaticRequest(req: Request, requestedPath: string, staticRoute: StaticRoute) {
+        const resourcePath: string = requestedPath.replace(staticRoute.path, "");
+        const extension: string = resourcePath.replace(/.*(?=\.[a-zA-Z0-9_]*$)/, "");
+        const contentType: string | null = extension ? ContentHandler.getContentType(extension) : null;
+
+        try {
+            req.raw.respond({ headers: contentType ? new Headers({ "Content-Type": contentType }) : new Headers(), body: await Deno.readFile(staticRoute.folder + resourcePath) });
+        }catch {
+            req.raw.respond({ status: 404, body: "File not found" });
+        }
+    }
+
     private async handleRequests(server: Server) {
         for await (const rawRequest of server) {
             if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
@@ -304,6 +324,15 @@ export default class Aqua {
                 if (matchingRegexRoute) {
                     await this.respondToRequest(req, requestedPath, matchingRegexRoute as RegexRoute);
                     continue;
+                }
+
+                if (req.method === "GET") {
+                    const matchingStaticRoute = Router.findMatchingStaticRoute(requestedPath, this.staticRoutes);
+
+                    if (matchingStaticRoute) {
+                        await this.respondToStaticRequest(req, requestedPath, matchingStaticRoute);
+                        continue;
+                    }
                 }
 
                 await this.respondWithNoRouteFound(req);
@@ -351,5 +380,10 @@ export default class Aqua {
     public post(path: string | RegExp, responseHandler: ResponseHandler): Aqua {
         this.route(path, "POST", responseHandler);
         return this;
+    }
+
+    public serve(folder: string, path: string) {
+        if (!path.startsWith("/")) throw Error("Routes must start with a slash");
+        this.staticRoutes.push({ folder: folder.replace(/\/$/, "") + "/", path: path.replace(/\/$/, "") + "/" });
     }
 }
