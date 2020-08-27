@@ -8,6 +8,8 @@ async function request(suffix: string = "", options: any = {}) {
     return await r.text();
 }
 
+await request();
+
 Deno.test("Is website up and is the content right?", async () => {
     app.get("/", (req) => "Hello, World!");
 
