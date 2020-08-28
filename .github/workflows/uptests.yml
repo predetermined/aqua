@@ -1,0 +1,24 @@
+name: Uptests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        deno: ["v1.x", "nightly"]
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: denolib/setup-deno@c7d7968ad4a59c159a777f79adddad6872ee8d96
+        with:
+          deno-version: ${{ matrix.deno }}
+
+      - name: Run tests
+        run: deno test -A tests/uptests.ts
