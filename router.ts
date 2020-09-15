@@ -1,4 +1,4 @@
-import {Route, RegexRoute, StaticRoute} from "./aqua.ts";
+import type {Route, RegexRoute, StaticRoute} from "./aqua.ts";
 
 export default class Router {
     public static parseRequestPath(url: string) {
