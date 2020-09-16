@@ -1,4 +1,4 @@
-import Aqua from "../aqua.ts";
+import Aqua from "../mod.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
