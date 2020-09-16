@@ -10,7 +10,7 @@ Aqua is a minimal and fast web framework.
 
 ## Example usage
 ```typescript
-import Aqua from "https://deno.land/x/aqua/aqua.ts";
+import Aqua from "https://deno.land/x/aqua/mod.ts";
 
 const app = new Aqua(3100);
 
@@ -32,7 +32,7 @@ app.route("/", "GET", (req) => "Hello, World!");
 ```
 
 ## Middlewares
-You can register middlewares, that will be able to adjust the respond object, the following way:
+You can register middlewares, that will be able to adjust the response object, the following way:
 ```typescript
 app.register((req, res) => {
     // Make changes to the response object
