@@ -1,4 +1,4 @@
-import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.69.0/http/server.ts";
+import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.71.0/http/server.ts";
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
