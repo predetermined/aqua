@@ -74,12 +74,13 @@ However, you can still overwrite existing headers.
 ## Benchmarks
 |Framework  | Version   | Avg RPS   | Router?
 |-----------|-----------|-----------|-----------
-| Deno HTTP | 0.61.0    | 22614     | No
-| **Aqua**  | **1.0.2** | **21360** | **Yes**
-| Fastro    | 0.13.5    | 21292     | Yes
-| Drash     | 1.0.7     | 18020     | Yes
-| Denotrain | 0.5.2     | 13430     | Yes
-| Attain    | master    | 9597      | Yes
+| Deno HTTP | 0.75.0    | 19138     | No
+| **Aqua**  | **1.0.8** | **17726** | **Yes**
+| Drash     | 1.2.5     | 16022     | Yes
+| Fen       | 0.8.0     | 7071      | Yes
+| Abc       | 1.2.0     | 4676      | Yes
+
+Last updated: 2020-11-01
 
 ## More examples
 
