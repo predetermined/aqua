@@ -49,6 +49,40 @@ app.get("/api/:action", (req) => {
 });
 ```
 
+## Schemas
+Schemas will discard non-matching requests (Defined fallback handler or default 404).
+```typescript
+app.get("/", (req) => {
+    return req.parameters.action;
+}, {
+   schema: {
+       query: [
+           mustExist("hello")
+       ]
+   }
+});
+```
+This schema would only allow requests with the `hello`
+query (for example, `GET /?hello=yes`).
+The following helper functions are currently available:
+* `mustExist(key)`
+* `valueMustBeByType(key, type)`
+
+You can of course also build your own schema validation functions.
+Here's how the `mustExist` function looks:
+```typescript
+export function mustExist(key: string): RoutingSchemaValidationFunction {
+    return function() {
+        /*
+            `this` depends on the context, it could either be the 
+            query, parameters, cookies or body object.
+            Luckily, they all have the same type.
+        */
+        return Object.keys(this).includes(key);
+    };
+}
+```
+
 ## Response value
 You can either just return a string
 ```typescript
