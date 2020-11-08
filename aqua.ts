@@ -92,7 +92,7 @@ export function mustExist(key: string): RoutingSchemaValidationFunction {
     };
 }
 
-export function valueMustBeByType(key: string, type: "string" | "number" | "boolean" | "object" | "undefined"): RoutingSchemaValidationFunction {
+export function valueMustBeOfType(key: string, type: "string" | "number" | "boolean" | "object" | "undefined"): RoutingSchemaValidationFunction {
     return function() {
         return Object.keys(this).includes(key) && typeof this[key] === type;
     }
@@ -106,7 +106,6 @@ export default class Aqua {
     private options: Options = {};
     private middlewares: Middleware[] = [];
     private staticRoutes: StaticRoute[] = [];
-
     private fallbackHandler: ResponseHandler | null = null;
 
     constructor(port: number, options?: Options) {

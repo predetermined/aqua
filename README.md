@@ -66,7 +66,7 @@ This schema would only allow requests with the `hello`
 query (for example, `GET /?hello=yes`).
 The following helper functions are currently available:
 * `mustExist(key)`
-* `valueMustBeByType(key, type)`
+* `valueMustBeOfType(key, type)`
 
 You can of course also build your own schema validation functions.
 Here's how the `mustExist` function looks:

@@ -1,4 +1,4 @@
-import Aqua, { mustExist, valueMustBeByType } from "../mod.ts";
+import Aqua, { mustExist, valueMustBeOfType } from "../mod.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
@@ -95,7 +95,7 @@ registerTest("Query schemas working?", async () => {
         schema: {
             query: [
                 mustExist("hello"),
-                valueMustBeByType("hello", "string")
+                valueMustBeOfType("hello", "string")
             ]
         }
     });
@@ -109,7 +109,7 @@ registerTest("Query schemas failing if wrong query provided?", async () => {
         schema: {
             query: [
                 mustExist("hello"),
-                valueMustBeByType("hello", "number")
+                valueMustBeOfType("hello", "number")
             ]
         }
     });
@@ -123,7 +123,7 @@ registerTest("Parameter schemas working?", async () => {
         schema: {
             parameters: [
                 mustExist("hello"),
-                valueMustBeByType("hello", "string")
+                valueMustBeOfType("hello", "string")
             ]
         }
     });
@@ -137,7 +137,7 @@ registerTest("Parameter schemas failing if validation functions should return fa
         schema: {
             parameters: [
                 mustExist("hello"),
-                valueMustBeByType("hello", "number")
+                valueMustBeOfType("hello", "number")
             ]
         }
     });
@@ -151,7 +151,7 @@ registerTest("Body schemas working?", async () => {
         schema: {
             body: [
                 mustExist("hello"),
-                valueMustBeByType("hello", "string")
+                valueMustBeOfType("hello", "string")
             ]
         }
     });
@@ -168,7 +168,7 @@ registerTest("Body schemas failing if validation functions should return false p
         schema: {
             body: [
                 mustExist("hello"),
-                valueMustBeByType("hello", "string")
+                valueMustBeOfType("hello", "string")
             ]
         }
     });
@@ -189,15 +189,15 @@ registerTest("mustExist function working if key not found?", async () => {
 });
 
 registerTest("valueMustBeByType function working?", async () => {
-    if (!valueMustBeByType("test", "number").bind({ test: 1 })()) throw Error("valueMustBeByType function returned wrong value");
+    if (!valueMustBeOfType("test", "number").bind({ test: 1 })()) throw Error("valueMustBeByType function returned wrong value");
 });
 
 registerTest("valueMustBeByType function working if key not found?", async () => {
-    if (valueMustBeByType("test", "string").bind({ test2: "test" })()) throw Error("valueMustBeByType function returned wrong value");
+    if (valueMustBeOfType("test", "string").bind({ test2: "test" })()) throw Error("valueMustBeByType function returned wrong value");
 });
 
 registerTest("valueMustBeByType function working if key value has a different type?", async () => {
-    if (valueMustBeByType("test", "string").bind({ test: false })()) throw Error("valueMustBeByType function returned wrong value");
+    if (valueMustBeOfType("test", "string").bind({ test: false })()) throw Error("valueMustBeByType function returned wrong value");
 });
 
 setInterval(() => {
