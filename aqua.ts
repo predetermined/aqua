@@ -45,11 +45,13 @@ export interface Route {
     usesURLParameters: boolean;
     urlParameterRegex?: RegExp;
     responseHandler: ResponseHandler;
+    options?: RoutingOptions;
 }
 
 export interface RegexRoute {
     path: RegExp;
     responseHandler: ResponseHandler;
+    options?: RoutingOptions;
 }
 
 export interface StaticRoute {
@@ -65,6 +67,34 @@ export interface Options {
         hostname?: string;
         certFile: string;
         keyFile: string;
+    }
+}
+
+export type RoutingSchemaValidationFunction = (this: RoutingSchemaValidationContext) => boolean;
+
+interface RoutingSchemaValidationContext {
+    [name: string]: any;
+}
+
+type RoutingSchemaKeys = "body" | "query" | "cookies" | "parameters";
+
+type RoutingSchema = {
+    [requestKey in RoutingSchemaKeys]?: RoutingSchemaValidationFunction[];
+};
+
+export interface RoutingOptions {
+    schema?: RoutingSchema;
+}
+
+export function mustExist(key: string): RoutingSchemaValidationFunction {
+    return function() {
+        return Object.keys(this).includes(key);
+    };
+}
+
+export function valueMustBeByType(key: string, type: "string" | "number" | "boolean" | "object" | "undefined"): RoutingSchemaValidationFunction {
+    return function() {
+        return Object.keys(this).includes(key) && typeof this[key] === type;
     }
 }
 
@@ -197,6 +227,25 @@ export default class Aqua {
             req.parameters = this.connectURLParameters(route as Route, requestedPath);
 
             if (Object.values(req.parameters).find((parameterValue) => parameterValue === "") !== undefined) {
+                await this.respondWithNoRouteFound(req);
+                return;
+            }
+        }
+
+        if (route.options?.schema) {
+            let passedAllValidations = true;
+
+            routingSchemaIterator:
+                for (const routingSchemaKey of Object.keys(route.options.schema) as RoutingSchemaKeys[]) {
+                    for (const validationFunction of route.options.schema[routingSchemaKey] || []) {
+                        if (!validationFunction.bind(req[routingSchemaKey])()) {
+                            passedAllValidations = false;
+                            break routingSchemaIterator;
+                        }
+                    }
+                }
+
+            if (!passedAllValidations) {
                 await this.respondWithNoRouteFound(req);
                 return;
             }
@@ -352,7 +401,7 @@ export default class Aqua {
         return this;
     }
 
-    public route(path: string | RegExp, method: Method, responseHandler: ResponseHandler): Aqua {
+    public route(path: string | RegExp, method: Method, responseHandler: ResponseHandler, options: RoutingOptions = {}): Aqua {
         if (path instanceof RegExp) {
             this.regexRoutes.push({ path, responseHandler });
             return this;
@@ -367,18 +416,19 @@ export default class Aqua {
             path,
             usesURLParameters,
             urlParameterRegex: usesURLParameters ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^\/]*)")) : undefined,
-            responseHandler
-        };
+            responseHandler,
+            options
+        } as Route;
         return this;
     }
 
-    public get(path: string | RegExp, responseHandler: ResponseHandler): Aqua {
-        this.route(path, "GET", responseHandler);
+    public get(path: string | RegExp, responseHandler: ResponseHandler, options: RoutingOptions = {}): Aqua {
+        this.route(path, "GET", responseHandler, options);
         return this;
     }
 
-    public post(path: string | RegExp, responseHandler: ResponseHandler): Aqua {
-        this.route(path, "POST", responseHandler);
+    public post(path: string | RegExp, responseHandler: ResponseHandler, options: RoutingOptions = {}): Aqua {
+        this.route(path, "POST", responseHandler, options);
         return this;
     }
 
