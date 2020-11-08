@@ -385,5 +385,6 @@ export default class Aqua {
     public serve(folder: string, path: string) {
         if (!path.startsWith("/")) throw Error("Routes must start with a slash");
         this.staticRoutes.push({ folder: folder.replace(/\/$/, "") + "/", path: path.replace(/\/$/, "") + "/" });
+        return this;
     }
 }
