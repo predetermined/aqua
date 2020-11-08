@@ -71,7 +71,7 @@ The following helper functions are currently available:
 You can of course also build your own schema validation functions.
 Here's how the `mustExist` function looks:
 ```typescript
-export function mustExist(key: string): RoutingSchemaValidationFunction {
+function mustExist(key: string): RoutingSchemaValidationFunction {
     return function() {
         /*
             `this` depends on the context, it could either be the 
