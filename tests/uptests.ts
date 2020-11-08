@@ -1,4 +1,4 @@
-import Aqua from "../mod.ts";
+import Aqua, { mustExist, valueMustBeByType } from "../mod.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
@@ -88,6 +88,116 @@ registerTest("Body parsing working if passed FormData?", async () => {
 
     const content = await request(`/test-formdata-body-parsing`, { method: "post", body: f });
     if (content !== "hello") throw Error("Body parsing of FormData don't seem to work");
+});
+
+registerTest("Query schemas working?", async () => {
+    app.get("/test-query-schema-working", (req) => "Hello, World!", {
+        schema: {
+            query: [
+                mustExist("hello"),
+                valueMustBeByType("hello", "string")
+            ]
+        }
+    });
+
+    const content = await request("/test-query-schema-working?hello=test");
+    if (content !== "Hello, World!") throw Error("Query schema validation functions didn't all pass");
+});
+
+registerTest("Query schemas failing if wrong query provided?", async () => {
+    app.get("/test-query-schema-failing", (req) => "Hello, World!", {
+        schema: {
+            query: [
+                mustExist("hello"),
+                valueMustBeByType("hello", "number")
+            ]
+        }
+    });
+
+    const content = await request("/test-query-schema-failing?nohello=test");
+    if (content === "Hello, World!") throw Error("Query schema validation functions pass although the correct query was not provided");
+});
+
+registerTest("Parameter schemas working?", async () => {
+    app.get("/test-parameter-schema-working/:hello", (req) => "Hello, World!", {
+        schema: {
+            parameters: [
+                mustExist("hello"),
+                valueMustBeByType("hello", "string")
+            ]
+        }
+    });
+
+    const content = await request("/test-parameter-schema-working/test");
+    if (content !== "Hello, World!") throw Error("Parameter schema validation functions passed although they shouldn't");
+});
+
+registerTest("Parameter schemas failing if validation functions should return false provided?", async () => {
+    app.get("/test-parameter-schema-failing/:hello", (req) => "Hello, World!", {
+        schema: {
+            parameters: [
+                mustExist("hello"),
+                valueMustBeByType("hello", "number")
+            ]
+        }
+    });
+
+    const content = await request("/test-parameter-schema-failing/test");
+    if (content === "Hello, World!") throw Error("Parameter schema validation functions passed although they shouldn't");
+});
+
+registerTest("Body schemas working?", async () => {
+    app.post("/test-body-schema-working", (req) => "Hello, World!", {
+        schema: {
+            body: [
+                mustExist("hello"),
+                valueMustBeByType("hello", "string")
+            ]
+        }
+    });
+
+    const f = new FormData();
+    f.append("hello", "hello");
+
+    const content = await request("/test-body-schema-working", { method: "post", body: f });
+    if (content !== "Hello, World!") throw Error("Body schema validation functions passed although they shouldn't");
+});
+
+registerTest("Body schemas failing if validation functions should return false provided?", async () => {
+    app.post("/test-body-schema-failing", (req) => "Hello, World!", {
+        schema: {
+            body: [
+                mustExist("hello"),
+                valueMustBeByType("hello", "string")
+            ]
+        }
+    });
+
+    const f = new FormData();
+    f.append("nohello", "test");
+
+    const content = await request("/test-body-schema-failing", { method: "post", body: f });
+    if (content === "Hello, World!") throw Error("Body schema validation functions passed although they shouldn't");
+});
+
+registerTest("mustExist function working?", async () => {
+    if (!mustExist("test").bind({ test: 1 })()) throw Error("mustExist function returned wrong value");
+});
+
+registerTest("mustExist function working if key not found?", async () => {
+    if (mustExist("test").bind({ test2: 1 })()) throw Error("mustExist function returned wrong value");
+});
+
+registerTest("valueMustBeByType function working?", async () => {
+    if (!valueMustBeByType("test", "number").bind({ test: 1 })()) throw Error("valueMustBeByType function returned wrong value");
+});
+
+registerTest("valueMustBeByType function working if key not found?", async () => {
+    if (valueMustBeByType("test", "string").bind({ test2: "test" })()) throw Error("valueMustBeByType function returned wrong value");
+});
+
+registerTest("valueMustBeByType function working if key value has a different type?", async () => {
+    if (valueMustBeByType("test", "string").bind({ test: false })()) throw Error("valueMustBeByType function returned wrong value");
 });
 
 setInterval(() => {
