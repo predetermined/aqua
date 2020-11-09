@@ -53,7 +53,7 @@ app.get("/api/:action", (req) => {
 Schemas will discard non-matching requests (Defined fallback handler or default 404).
 ```typescript
 app.get("/", (req) => {
-    return req.parameters.action;
+    return "Hello, World!";
 }, {
    schema: {
        query: [
