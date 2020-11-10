@@ -151,7 +151,7 @@ export default class Aqua {
         }catch(error) {
             if (rawBody.includes(`name="`)) {
                 body = (rawBody.match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || [])
-                    .reduce((fields: {}, field: string): {} => {
+                    .reduce((fields: {}, field: string): { [name: string]: string; } => {
                         if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
 
                         return {
@@ -170,12 +170,15 @@ export default class Aqua {
 
         const queryString: string[] = req.url.replace(/(.*)\?/, "").split("&");
 
-        return queryString.reduce((queries: {}, query: string): {} => {
-            if (!query || !query.split("=")?.[0] || query.split("=")?.[1] === undefined) return queries;
+        return queryString.reduce((queries: {}, query: string): { [name: string]: string; } => {
+            const queryNameAndValueSeparated = query.split("=");
+            const name = queryNameAndValueSeparated?.[0];
+            if (!name) return queries;
+            const value = queryNameAndValueSeparated?.[1] ?? "";
 
             return {
                 ...queries,
-                [decodeURIComponent(query.split("=")?.[0])]: decodeURIComponent(query.split("=")?.[1].replace(/\+/g, " "))
+                [decodeURIComponent(name)]: decodeURIComponent(value.replace(/\+/g, " "))
             }
         }, {}) || {};
     }
@@ -185,7 +188,7 @@ export default class Aqua {
 
         if (!rawCookieString) return {};
 
-        return rawCookieString.split(";").reduce((cookies: {}, cookie: string): {} => {
+        return rawCookieString.split(";").reduce((cookies: {}, cookie: string): { [name: string]: string; } => {
             return {
                 ...cookies,
                 [cookie.split("=")[0].trimLeft()]: cookie.split("=")[1]
