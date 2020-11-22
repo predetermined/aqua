@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - uses: denolib/setup-deno@c7d7968ad4a59c159a777f79adddad6872ee8d96
+      - uses: denolib/setup-deno@v2
         with:
           deno-version: ${{ matrix.deno }}
 
