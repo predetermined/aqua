@@ -4,7 +4,7 @@ import ContentHandler from "./content_handler.ts";
 
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
-type Middleware = (req: Request, res: Response) => Response;
+type Middleware = (req: Request, res: Response) => (Response | Promise<Response>);
 type RawResponse = string | Response;
 export type Response = ContentResponse | RedirectResponse;
 
@@ -269,11 +269,14 @@ export default class Aqua {
             return;
         }
 
-        const responseAfterMiddlewares: Response = this.middlewares.length > 0 ? this.middlewares.reduce((currentResponse: Response, middleware: Middleware): Response => {
-            if (!currentResponse) return currentResponse;
+        let responseAfterMiddlewares: Response = formattedResponse;
 
-            return middleware(req, currentResponse);
-        }, formattedResponse) : formattedResponse;
+        if (this.middlewares.length > 0) {
+            for (const middleware of this.middlewares) {
+                responseAfterMiddlewares = await middleware(req, responseAfterMiddlewares);
+            }
+        }
+
         const headers: Headers = new Headers(formattedResponse.headers || {});
 
         if (formattedResponse.cookies) {
