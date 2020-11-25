@@ -33,9 +33,15 @@ registerTest("Middlewares working?", async () => {
             content: respondValue.content?.replace("REPLACE_ME", "Planet") || ""
         };
     });
+    app.register((req, respondValue) => {
+        return {
+            ...respondValue,
+            content: respondValue.content?.replace("Planet", "Another Planet") || ""
+        };
+    });
 
     const content = await request();
-    if (content !== "Hello, Planet!") throw Error("Middlewares don't seem to work");
+    if (content !== "Hello, Another Planet!") throw Error("Middlewares don't seem to work");
 });
 
 registerTest("URL parameters working?", async () => {
