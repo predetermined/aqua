@@ -217,7 +217,14 @@ export default class Aqua {
     }
 
     private formatRawResponse(rawResponse: RawResponse): Response {
-        return typeof rawResponse === "string" ? { content: rawResponse } : rawResponse;
+        if (typeof rawResponse === "string") {
+            return {
+                headers: { "Content-Type": "text/html; charset=UTF-8" },
+                content: rawResponse
+            }
+        }
+
+        return rawResponse;
     }
 
     private isRegexRoute(route: Route | RegexRoute): boolean {
