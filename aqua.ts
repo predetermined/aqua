@@ -131,7 +131,11 @@ export default class Aqua {
     public async render(filePath: string): Promise<string> {
         try {
             return this.textDecoder.decode(await Deno.readFile(filePath));
-        }catch {
+        }catch(error) {
+            if (error instanceof Deno.errors.PermissionDenied) {
+                return "Please run your application with the '--allow-read' flag.";
+            }
+
             return "Could not render file.";
         }
     }
