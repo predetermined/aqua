@@ -144,7 +144,7 @@ app.get("/dashboard", (req) => {
 ### Static routes
 You can register static routes by passing the path to the local folder and
 the public alias to the `serve` function.
-```javascript
+```typescript
 app.serve("mystaticfolder", "/public");
 // A GET request to /public/test.txt would serve the local file at mystaticfolder/test.txt
 ```
