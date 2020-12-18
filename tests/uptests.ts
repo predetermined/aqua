@@ -86,6 +86,23 @@ registerTest("Body parsing working if Object converted to JSON string?", async (
     if (content !== "hello") throw Error("Body parsing of a object converted to a JSON string don't seem to work");
 });
 
+registerTest("Body parsing working if passed form-urlencoded?", async () => {
+    app.post("/test-form-urlencoded-body-parsing", (req) => req.body.test);
+
+    const f = [
+        encodeURIComponent("test") + "=" + encodeURIComponent("hello")
+    ].join("&");
+
+    const content = await request(`/test-form-urlencoded-body-parsing`, {
+        method: "post",
+        body: f,
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        }
+    });
+    if (content !== "hello") throw Error("Body parsing of form-urlencoded isn't working");
+});
+
 registerTest("Body parsing working if passed FormData?", async () => {
     app.post("/test-formdata-body-parsing", (req) => req.body.test);
 
@@ -93,7 +110,7 @@ registerTest("Body parsing working if passed FormData?", async () => {
     f.append("test", "hello");
 
     const content = await request(`/test-formdata-body-parsing`, { method: "post", body: f });
-    if (content !== "hello") throw Error("Body parsing of FormData don't seem to work");
+    if (content !== "hello") throw Error("Body parsing of FormData isn't working");
 });
 
 registerTest("Query schemas working?", async () => {
