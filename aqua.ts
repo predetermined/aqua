@@ -163,6 +163,8 @@ export default class Aqua {
                             [/name="(.*?)"/.exec(field)?.[1] || ""]: field.match(/(.*?)(?=(\s|\n|\r)*---)/)?.[0]
                         }
                     }, {});
+            }else {
+                body = Object.fromEntries(new URLSearchParams(rawBody));
             }
         }
 
@@ -172,19 +174,7 @@ export default class Aqua {
     private parseQuery(req: ServerRequest): { [name: string]: string; } {
         if (!req.url.includes("?")) return {};
 
-        const queryString: string[] = req.url.replace(/(.*)\?/, "").split("&");
-
-        return queryString.reduce((queries: {}, query: string): { [name: string]: string; } => {
-            const queryNameAndValueSeparated = query.split("=");
-            const name = queryNameAndValueSeparated?.[0];
-            if (!name) return queries;
-            const value = queryNameAndValueSeparated?.[1] ?? "";
-
-            return {
-                ...queries,
-                [decodeURIComponent(name)]: decodeURIComponent(value.replace(/\+/g, " "))
-            }
-        }, {}) || {};
+        return Object.fromEntries(new URLSearchParams(req.url.replace(/(.*)\?/, "")));
     }
 
     private parseCookies(req: ServerRequest): { [name: string]: string; } {
