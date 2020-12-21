@@ -1,4 +1,4 @@
-import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.80.0/http/server.ts";
+import { serve, serveTLS, Server, ServerRequest, Response as ServerResponse } from "https://deno.land/std@0.81.0/http/server.ts";
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
@@ -143,10 +143,8 @@ export default class Aqua {
     private async parseBody(req: ServerRequest): Promise<{ [name: string]: string; }> {
         if (!req.contentLength) return {};
 
-        const buffer: Uint8Array = new Uint8Array(req.contentLength || 0);
-        const lengthRead: number = await req.body.read(buffer) || 0;
-        const rawBody: string = this.textDecoder.decode(buffer.subarray(0, lengthRead));
-        let body: {} = {};
+        const rawBody: string = this.textDecoder.decode(await Deno.readAll(req.body));
+        let body: { [name: string]: any; } = {};
 
         if (!rawBody) return {};
 
