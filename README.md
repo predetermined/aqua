@@ -186,3 +186,13 @@ const app = new Aqua(3001, {
 ```
 The example above would allow you to handle requests to `http://localhost:3001` and `https://localhost:3002`
 at the same time.
+
+### File uploading
+```typescript
+app.post("/upload", async (req) => {
+    const { newProfilePicture } = req.files;
+    await Deno.writeFile(newProfilePicture.name, new Uint8Array(await newProfilePicture.arrayBuffer()));
+    
+    return "Uploaded!";
+});
+```
