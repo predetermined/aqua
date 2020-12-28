@@ -203,6 +203,36 @@ registerTest("Body schemas failing if validation functions should return false p
     if (content === "Hello, World!") throw Error("Body schema validation functions passed although they shouldn't");
 });
 
+registerTest("File uploading working?", async () => {
+    app.post("/upload", async req => {
+        const { exampleFile } = req.files;
+        return exampleFile.size.toString();
+    });
+
+    const exampleFile = Deno.readFileSync("tests/example.png");
+    const f = new FormData();
+    f.append("exampleFile", new Blob([exampleFile]));
+
+    const content = await request("/upload", { method: "post", body: f });
+    if (content !== "1255") throw Error("File uploading route returned a wrong file size");
+});
+
+registerTest("File uploading with multiple files working?", async () => {
+    app.post("/upload", async req => {
+        const { exampleFile1, exampleFile2 } = req.files;
+        return (exampleFile1.size + exampleFile2.size).toString();
+    });
+
+    const exampleFile1 = Deno.readFileSync("tests/example.png");
+    const exampleFile2 = Deno.readFileSync("tests/example.jpg");
+    const f = new FormData();
+    f.append("exampleFile1", new Blob([exampleFile1]));
+    f.append("exampleFile2", new Blob([exampleFile2]));
+
+    const content = await request("/upload", { method: "post", body: f });
+    if (content !== "12231") throw Error("File uploading route returned a wrong file size when sending multiple files");
+});
+
 registerTest("mustExist function working?", async () => {
     if (!mustExist("test").bind({ test: 1 })()) throw Error("mustExist function returned wrong value");
 });
