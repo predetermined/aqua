@@ -35,6 +35,7 @@ export interface Request {
     headers: Headers;
     query: { [name: string]: string; };
     body: { [name: string]: string; };
+    files: { [name: string]: File; };
     cookies: { [name: string]: string; };
     parameters: { [name: string]: string; };
     matches: string[];
@@ -100,6 +101,7 @@ export function valueMustBeOfType(key: string, type: "string" | "number" | "bool
 
 export default class Aqua {
     private readonly textDecoder: TextDecoder;
+    private readonly textEncoder: TextEncoder;
     private readonly servers: Server[] = [];
     private routes: { [path: string]: Route } = {};
     private regexRoutes: RegexRoute[] = [];
@@ -123,6 +125,7 @@ export default class Aqua {
         if (!onlyTLS) this.servers.push(serve({ port }));
 
         this.textDecoder = new TextDecoder();
+        this.textEncoder = new TextEncoder();
         this.options = options || {};
         this.spinUpServers();
         if (this.options.log) console.log(`Server started (http://localhost:${port})`);
@@ -140,13 +143,72 @@ export default class Aqua {
         }
     }
 
-    private async parseBody(req: ServerRequest): Promise<{ [name: string]: string; }> {
-        if (!req.contentLength) return {};
+    private async parseBody(req: ServerRequest): Promise<{ body: { [name: string]: string; }; files: { [name: string]: File; }; }> {
+        if (!req.contentLength) return { body: {}, files: {} };
 
-        const rawBody: string = this.textDecoder.decode(await Deno.readAll(req.body));
+        const buffer = await Deno.readAll(req.body);
+        const rawBody: string = this.textDecoder.decode(buffer);
         let body: { [name: string]: any; } = {};
 
-        if (!rawBody) return {};
+        if (!rawBody) return { body: {}, files: {} };
+
+        const files: { [name: string]: File; } = (rawBody.match(/---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?(?=((\n|\r)--|$))/g) || []).reduce((files: { [name: string]: File; }, fileString: string, i) => {
+            const fileName = /filename="(.*?)"/.exec(fileString)?.[1];
+            const fileType = /Content-Type: (.*)/.exec(fileString)?.[1]?.trim();
+            const name = /name="(.*?)"/.exec(fileString)?.[1];
+
+            if (!fileName || !name) return files;
+
+            const uniqueString = fileString.match(/---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?/g)?.[0];
+
+            if (!uniqueString) return files;
+
+            const uniqueStringEncoded = this.textEncoder.encode(uniqueString);
+            const endSequence = this.textEncoder.encode("----");
+
+            let start = -1;
+            let end = buffer.length;
+            for (let i = 0; i < buffer.length; i++) {
+                if (start === -1) {
+                    let matchedUniqueString = true;
+                    let uniqueStringEncodedIndex = 0;
+                    for (let j = i; j < i + uniqueStringEncoded.length; j++) {
+                        if (buffer[j] !== uniqueStringEncoded[uniqueStringEncodedIndex]) {
+                            matchedUniqueString = false;
+                            break;
+                        }
+                        uniqueStringEncodedIndex++;
+                    }
+
+                    if (matchedUniqueString) {
+                        i = start = i + uniqueStringEncoded.length;
+                    }
+                    continue;
+                }
+
+                let matchedEndSequence = true;
+                let endSequenceIndex = 0;
+                for (let j = i; j < i + endSequence.length; j++) {
+                    if (buffer[j] !== endSequence[endSequenceIndex]) {
+                        matchedEndSequence = false;
+                        break;
+                    }
+                    endSequenceIndex++;
+                }
+
+                if (matchedEndSequence) {
+                    end = i;
+                    break;
+                }
+            }
+
+            if (start === -1) return files;
+
+            const fileBuffer = buffer.subarray(start, end);
+            const file = new File([fileBuffer], fileName, { type: fileType });
+
+            return { [name]: file, ...files };
+        }, {});
 
         try {
             body = JSON.parse(rawBody);
@@ -166,7 +228,7 @@ export default class Aqua {
             }
         }
 
-        return body;
+        return { body, files };
     }
 
     private parseQuery(req: ServerRequest): { [name: string]: string; } {
@@ -343,13 +405,15 @@ export default class Aqua {
         for await (const rawRequest of server) {
             if (this.options.ignoreTrailingSlash) rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
 
+            const { body, files } = rawRequest.contentLength ? await this.parseBody(rawRequest) : { body: {}, files: {} };
             const req: Request = {
                 raw: rawRequest,
                 url: rawRequest.url,
                 headers: rawRequest.headers,
                 method: (rawRequest.method.toUpperCase() as Method),
                 query: rawRequest.url.includes("?") ? this.parseQuery(rawRequest) : {},
-                body: rawRequest.contentLength ? await this.parseBody(rawRequest) : {},
+                body,
+                files,
                 cookies: rawRequest.headers.get("cookies") ? this.parseCookies(rawRequest) : {},
                 parameters: {},
                 matches: []
