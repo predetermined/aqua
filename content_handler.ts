@@ -57,6 +57,7 @@ export default class ContentHandler {
         ".ttf": "font/ttf",
         ".txt": "text/plain",
         ".vsd": "application/vnd.visio",
+        ".wasm": "application/wasm",
         ".wav": "audio/x-wav",
         ".weba": "audio/webm",
         ".webm": "video/webm",
