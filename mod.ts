@@ -1,2 +1,2 @@
 export * from "./aqua.ts";
-export { default as Aqua } from "./aqua.ts";
+export { default } from "./aqua.ts";
