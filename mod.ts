@@ -1,4 +1,2 @@
 export * from "./aqua.ts";
-import Aqua from "./aqua.ts";
-
-export default Aqua;
+export { default as Aqua } from "./aqua.ts";
