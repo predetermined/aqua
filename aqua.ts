@@ -5,7 +5,7 @@ import ContentHandler from "./content_handler.ts";
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 type Middleware = (req: Request, res: Response) => (Response | Promise<Response>);
-type RawResponse = string | Response;
+type RawResponse = string | Uint8Array | Response;
 export type Response = ContentResponse | RedirectResponse;
 
 interface ServerRequestWithRawRespond extends ServerRequest {
@@ -17,7 +17,7 @@ interface ContentResponse {
     headers?: { [name: string]: string; };
     cookies?: { [name: string]: string; };
     redirect?: string;
-    content: string;
+    content: string | Uint8Array;
 }
 
 interface RedirectResponse {
@@ -25,7 +25,7 @@ interface RedirectResponse {
     headers?: { [name: string]: string; };
     cookies?: { [name: string]: string; };
     redirect: string;
-    content?: string;
+    content?: string | Uint8Array;
 }
 
 export interface Request {
@@ -58,6 +58,7 @@ export interface RegexRoute {
 export interface StaticRoute {
     folder: string;
     path: string;
+    options?: RoutingOptions;
 }
 
 export interface Options {
@@ -103,11 +104,11 @@ export default class Aqua {
     private readonly textDecoder: TextDecoder;
     private readonly textEncoder: TextEncoder;
     private readonly servers: Server[] = [];
-    private routes: { [path: string]: Route } = {};
+    private routes: { [path: string]: Route; } = {};
     private regexRoutes: RegexRoute[] = [];
+    private staticRoutes: StaticRoute[] = [];
     private options: Options = {};
     private middlewares: Middleware[] = [];
-    private staticRoutes: StaticRoute[] = [];
     private fallbackHandler: ResponseHandler | null = null;
 
     constructor(port: number, options?: Options) {
@@ -278,15 +279,27 @@ export default class Aqua {
             }
         }
 
+        if (rawResponse instanceof Uint8Array) {
+            return { content: rawResponse };
+        }
+
         return rawResponse;
     }
 
-    private isRegexRoute(route: Route | RegexRoute): boolean {
+    private isRegexRoute(route: Route | RegexRoute | StaticRoute): boolean {
         return route.path instanceof RegExp;
     }
 
-    private async respondToRequest(req: Request, requestedPath: string, route: Route | RegexRoute, usesURLParameters: boolean = false) {
-        if (usesURLParameters) {
+    private async getResponseAfterApplyingMiddlewares(req: Request, res: Response): Promise<Response> {
+        let responseAfterMiddlewares = res;
+        for (const middleware of this.middlewares) {
+            responseAfterMiddlewares = await middleware(req, responseAfterMiddlewares);
+        }
+        return responseAfterMiddlewares;
+    }
+
+    private async respondToRequest(req: Request, requestedPath: string, route: Route | RegexRoute | StaticRoute, additionalResponseOptions: { usesURLParameters?: boolean; customResponseHandler?: ResponseHandler | undefined; } = { usesURLParameters: false, customResponseHandler: undefined }) {
+        if (additionalResponseOptions.usesURLParameters) {
             req.parameters = this.connectURLParameters(route as Route, requestedPath);
 
             if (Object.values(req.parameters).find((parameterValue) => parameterValue === "") !== undefined) {
@@ -316,21 +329,14 @@ export default class Aqua {
 
         if (this.isRegexRoute(route)) req.matches = (requestedPath.match(route.path) as string[]).slice(1) || [];
 
-        const formattedResponse: Response = this.formatRawResponse(await route.responseHandler(req));
+        const formattedResponse: Response = this.formatRawResponse(await (additionalResponseOptions.customResponseHandler ? additionalResponseOptions.customResponseHandler(req) : (route as Route | RegexRoute).responseHandler(req)));
 
         if (!formattedResponse) {
             req.raw.respond({ body: "No response content provided." });
             return;
         }
 
-        let responseAfterMiddlewares: Response = formattedResponse;
-
-        if (this.middlewares.length > 0) {
-            for (const middleware of this.middlewares) {
-                responseAfterMiddlewares = await middleware(req, responseAfterMiddlewares);
-            }
-        }
-
+        const responseAfterMiddlewares: Response = await this.getResponseAfterApplyingMiddlewares(req, formattedResponse);
         const headers: Headers = new Headers(formattedResponse.headers || {});
 
         if (formattedResponse.cookies) {
@@ -389,15 +395,18 @@ export default class Aqua {
         }
     }
 
-    private async respondToStaticRequest(req: Request, requestedPath: string, staticRoute: StaticRoute) {
+    private async handleStaticRequest(_req: Request, requestedPath: string, staticRoute: StaticRoute): Promise<ContentResponse> {
         const resourcePath: string = requestedPath.replace(staticRoute.path, "");
         const extension: string = resourcePath.replace(/.*(?=\.[a-zA-Z0-9_]*$)/, "");
         const contentType: string | null = extension ? ContentHandler.getContentType(extension) : null;
 
         try {
-            req.raw.respond({ headers: contentType ? new Headers({ "Content-Type": contentType }) : new Headers(), body: await Deno.readFile(staticRoute.folder + resourcePath) });
+            return {
+                headers: contentType ? { "Content-Type": contentType } : undefined,
+                content: await Deno.readFile(staticRoute.folder + resourcePath)
+            };
         }catch {
-            req.raw.respond({ status: 404, body: "File not found" });
+            return { statusCode: 404, content: "File not found" };
         }
     }
 
@@ -432,7 +441,7 @@ export default class Aqua {
                 const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
 
                 if (matchingRouteWithURLParameters) {
-                    await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, true);
+                    await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, { usesURLParameters: true });
                     continue;
                 }
 
@@ -447,7 +456,10 @@ export default class Aqua {
                     const matchingStaticRoute = Router.findMatchingStaticRoute(requestedPath, this.staticRoutes);
 
                     if (matchingStaticRoute) {
-                        await this.respondToStaticRequest(req, requestedPath, matchingStaticRoute);
+                        await this.respondToRequest(req, requestedPath, matchingStaticRoute, {
+                            customResponseHandler: async (req: Request) =>
+                                await this.handleStaticRequest(req, requestedPath, matchingStaticRoute)
+                        });
                         continue;
                     }
                 }
