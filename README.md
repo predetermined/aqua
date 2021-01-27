@@ -31,24 +31,6 @@ or use the route function
 app.route("/", "GET", (req) => "Hello, World!");
 ```
 
-## Middlewares
-You can register middlewares, that will be able to adjust the response object, the following way:
-```typescript
-app.register((req, res) => {
-    // Make changes to the response object
-    // res.content = res.content.replace("Hello", "Hi");
-    return res;
-});
-```
-
-## URL parameters
-You can define URL parameters by using a colon followed by the key name.
-```typescript
-app.get("/api/:action", (req) => {
-    return req.parameters.action;
-});
-```
-
 ## Schemas
 Schemas will discard non-matching requests (Defined fallback handler or default 404).
 ```typescript
@@ -81,6 +63,28 @@ function mustExist(key: string): RoutingSchemaValidationFunction {
         return Object.keys(this).includes(key);
     };
 }
+```
+
+## Middlewares
+You can register middlewares, that will be able to adjust the response object, the following way:
+```typescript
+app.register((req, res) => {
+    /*
+        const textContent = res.content instanceof Uint8Array 
+            ? new TextDecoder().decode(res.content)
+            : res.content;
+        res.content = textContent?.replace("Hello", "Hi");
+    */
+    return res;
+});
+```
+
+## URL parameters
+You can define URL parameters by using a colon followed by the key name.
+```typescript
+app.get("/api/:action", (req) => {
+    return req.parameters.action;
+});
 ```
 
 ## Response value
