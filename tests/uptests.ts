@@ -1,4 +1,4 @@
-import Aqua, { mustExist, valueMustBeOfType } from "../mod.ts";
+import Aqua, { mustExist, valueMustBeOfType } from "../aqua.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
@@ -27,17 +27,17 @@ registerTest("Is website up and is the content right?", async () => {
 
 registerTest("Middlewares working?", async () => {
     app.get("/", (req) => "Hello, REPLACE_ME!");
-    app.register((req, respondValue) => {
-        return {
-            ...respondValue,
-            content: respondValue.content?.replace("REPLACE_ME", "Planet") || ""
-        };
+    app.register((req, res) => {
+        if (req.url === "/") {
+            res.content = (res.content as string)?.replace("REPLACE_ME", "Planet") || "";
+        }
+        return res;
     });
-    app.register((req, respondValue) => {
-        return {
-            ...respondValue,
-            content: respondValue.content?.replace("Planet", "Another Planet") || ""
-        };
+    app.register((req, res) => {
+        if (req.url === "/") {
+            res.content = (res.content as string)?.replace("Planet", "Another Planet") || "";
+        }
+        return res;
     });
 
     const content = await request();
@@ -251,6 +251,24 @@ registerTest("valueMustBeByType function working if key not found?", async () =>
 
 registerTest("valueMustBeByType function working if key value has a different type?", async () => {
     if (valueMustBeOfType("test", "string").bind({ test: false })()) throw Error("valueMustBeByType function returned wrong value");
+});
+
+registerTest("Replacement of raw file content working?", async () => {
+    app.get("/example.txt", async req => {
+        return await Deno.readFile("tests/example.txt");
+    });
+
+    app.register((req, res) => {
+        if (req.url === "/example.txt") {
+            if (res.content instanceof Uint8Array) {
+                res.content = new TextDecoder().decode(res.content).replace("Hello", "Hi");
+            }
+        }
+        return res;
+    });
+
+    const content = await request("/example.txt");
+    if (content !== "Hi") throw new Error("Replacement of raw file content didn't work");
 });
 
 setInterval(() => {
