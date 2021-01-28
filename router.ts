@@ -1,14 +1,14 @@
-import type {Route, RegexRoute, StaticRoute} from "./aqua.ts";
+import type {StringRoute, RegexRoute, StaticRoute} from "./aqua.ts";
 
 export default class Router {
     public static parseRequestPath(url: string) {
         return url.replace(/(\?(.*))|(\#(.*))/, "");
     };
 
-    public static findRouteWithMatchingURLParameters(requestedPath: string, routes: { [path: string]: Route }) {
+    public static findRouteWithMatchingURLParameters(requestedPath: string, routes: { [path: string]: StringRoute }) {
         return routes[Object.keys(routes).find((path: string) => {
             if (!path.includes(":")) return false;
-            const route: Route = routes[path];
+            const route: StringRoute = routes[path];
 
             return requestedPath.replace(route.urlParameterRegex as RegExp, "").length === 0;
         }) || ""];
