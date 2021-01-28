@@ -4,8 +4,14 @@ const app = new Aqua(4000);
 let registeredTests = 0;
 let solvedTests = 0;
 
-async function request(suffix: string = "", options: any = {}) {
+async function requestContent(suffix: string = "", options: any = {}) {
     return await (await fetch(`http://localhost:4000${suffix}`, options)).text();
+}
+
+async function requestHeaders(suffix: string = "", options: any = {}) {
+    const res = await fetch(`http://localhost:4000${suffix}`, options);
+    await res.text();
+    return res.headers;
 }
 
 function registerTest(name: string, fn: () => any) {
@@ -16,12 +22,12 @@ function registerTest(name: string, fn: () => any) {
     });
 }
 
-await request();
+await requestContent();
 
 registerTest("Is website up and is the content right?", async () => {
     app.get("/", (req) => "Hello, World!");
 
-    const content = await request();
+    const content = await requestContent();
     if (content !== "Hello, World!") throw Error("Page isn't up or the content is wrong");
 });
 
@@ -40,49 +46,49 @@ registerTest("Middlewares working?", async () => {
         return res;
     });
 
-    const content = await request();
+    const content = await requestContent();
     if (content !== "Hello, Another Planet!") throw Error("Middlewares don't seem to work");
 });
 
 registerTest("URL parameters working?", async () => {
     app.get("/api/:action", (req) => req.parameters.action);
 
-    const content = await request(`/api/hello`);
+    const content = await requestContent(`/api/hello`);
     if (content !== "hello") throw Error("URL parameters don't seem to work");
 });
 
 registerTest("URL query decoding working?", async () => {
     app.get("/search", (req) => JSON.stringify(req.query));
 
-    const content = await request("/search?q=foo+bar&withCharsThatNeedEscaping=%24%26");
+    const content = await requestContent("/search?q=foo+bar&withCharsThatNeedEscaping=%24%26");
     if (content !== `{"q":"foo bar","withCharsThatNeedEscaping":"$&"}`) throw Error("URL query decoding doesn't seem to work");
 });
 
 registerTest("Custom fallback handler working?", async () => {
     app.provideFallback((req) => "Nothing to see here");
 
-    const content = await request(`/this_route_doesnt_exist`);
+    const content = await requestContent(`/this_route_doesnt_exist`);
     if (content !== "Nothing to see here") throw Error("Custom fallback handlers don't seem to work");
 });
 
 registerTest("Regex routes working?", async () => {
     app.get(new RegExp("\/hello-world\/(.*)"), (req) => JSON.stringify(req.matches));
 
-    const content = await request(`/hello-world/hello/okay`);
+    const content = await requestContent(`/hello-world/hello/okay`);
     if (JSON.parse(content)[0] !== "hello/okay") throw Error("Regex routes don't seem to work");
 });
 
 registerTest("Regex route priorities working?", async () => {
     app.get("/hello-world/should-trigger-first", (req) => "First!");
 
-    const content = await request(`/hello-world/should-trigger-first`);
+    const content = await requestContent(`/hello-world/should-trigger-first`);
     if (content !== "First!") throw Error("Regex route priorities don't seem to work");
 });
 
 registerTest("Body parsing working if Object converted to JSON string?", async () => {
     app.post("/test-json-body-parsing", (req) => req.body.test);
 
-    const content = await request(`/test-json-body-parsing`, { method: "post", body: JSON.stringify({ test: "hello" }) });
+    const content = await requestContent(`/test-json-body-parsing`, { method: "post", body: JSON.stringify({ test: "hello" }) });
     if (content !== "hello") throw Error("Body parsing of a object converted to a JSON string don't seem to work");
 });
 
@@ -93,7 +99,7 @@ registerTest("Body parsing working if passed form-urlencoded?", async () => {
         encodeURIComponent("test") + "=" + encodeURIComponent("hello")
     ].join("&");
 
-    const content = await request(`/test-form-urlencoded-body-parsing`, {
+    const content = await requestContent(`/test-form-urlencoded-body-parsing`, {
         method: "post",
         body: f,
         headers: {
@@ -109,7 +115,7 @@ registerTest("Body parsing working if passed FormData?", async () => {
     const f = new FormData();
     f.append("test", "hello");
 
-    const content = await request(`/test-formdata-body-parsing`, { method: "post", body: f });
+    const content = await requestContent(`/test-formdata-body-parsing`, { method: "post", body: f });
     if (content !== "hello") throw Error("Body parsing of FormData isn't working");
 });
 
@@ -123,7 +129,7 @@ registerTest("Query schemas working?", async () => {
         }
     });
 
-    const content = await request("/test-query-schema-working?hello=test");
+    const content = await requestContent("/test-query-schema-working?hello=test");
     if (content !== "Hello, World!") throw Error("Query schema validation functions didn't all pass");
 });
 
@@ -137,7 +143,7 @@ registerTest("Query schemas failing if wrong query provided?", async () => {
         }
     });
 
-    const content = await request("/test-query-schema-failing?nohello=test");
+    const content = await requestContent("/test-query-schema-failing?nohello=test");
     if (content === "Hello, World!") throw Error("Query schema validation functions pass although the correct query was not provided");
 });
 
@@ -151,7 +157,7 @@ registerTest("Parameter schemas working?", async () => {
         }
     });
 
-    const content = await request("/test-parameter-schema-working/test");
+    const content = await requestContent("/test-parameter-schema-working/test");
     if (content !== "Hello, World!") throw Error("Parameter schema validation functions passed although they shouldn't");
 });
 
@@ -165,7 +171,7 @@ registerTest("Parameter schemas failing if validation functions should return fa
         }
     });
 
-    const content = await request("/test-parameter-schema-failing/test");
+    const content = await requestContent("/test-parameter-schema-failing/test");
     if (content === "Hello, World!") throw Error("Parameter schema validation functions passed although they shouldn't");
 });
 
@@ -182,7 +188,7 @@ registerTest("Body schemas working?", async () => {
     const f = new FormData();
     f.append("hello", "hello");
 
-    const content = await request("/test-body-schema-working", { method: "post", body: f });
+    const content = await requestContent("/test-body-schema-working", { method: "post", body: f });
     if (content !== "Hello, World!") throw Error("Body schema validation functions passed although they shouldn't");
 });
 
@@ -199,7 +205,7 @@ registerTest("Body schemas failing if validation functions should return false p
     const f = new FormData();
     f.append("nohello", "test");
 
-    const content = await request("/test-body-schema-failing", { method: "post", body: f });
+    const content = await requestContent("/test-body-schema-failing", { method: "post", body: f });
     if (content === "Hello, World!") throw Error("Body schema validation functions passed although they shouldn't");
 });
 
@@ -213,7 +219,7 @@ registerTest("File uploading working?", async () => {
     const f = new FormData();
     f.append("exampleFile", new Blob([exampleFile]));
 
-    const content = await request("/upload", { method: "post", body: f });
+    const content = await requestContent("/upload", { method: "post", body: f });
     if (content !== "1255") throw Error("File uploading route returned a wrong file size");
 });
 
@@ -229,7 +235,7 @@ registerTest("File uploading with multiple files working?", async () => {
     f.append("exampleFile1", new Blob([exampleFile1]));
     f.append("exampleFile2", new Blob([exampleFile2]));
 
-    const content = await request("/upload", { method: "post", body: f });
+    const content = await requestContent("/upload", { method: "post", body: f });
     if (content !== "12231") throw Error("File uploading route returned a wrong file size when sending multiple files");
 });
 
@@ -267,8 +273,38 @@ registerTest("Replacement of raw file content working?", async () => {
         return res;
     });
 
-    const content = await request("/example.txt");
+    const content = await requestContent("/example.txt");
     if (content !== "Hi") throw new Error("Replacement of raw file content didn't work");
+});
+
+registerTest("Cookies set?", async () => {
+    app.get("/cookie-example", async req => {
+        return {
+            content: "hello",
+            cookies: {
+                test: "okay",
+                test2: "okaytoo"
+            }
+        }
+    });
+
+    const headers = await requestHeaders("/cookie-example");
+    if (headers.get("Set-Cookie") !== "test=okay, test2=okaytoo") throw new Error("Cookies not set properly")
+});
+
+registerTest("Headers set?", async () => {
+    app.get("/headers-example", async req => {
+        return {
+            content: "hello",
+            headers: {
+                test: "okay",
+                test2: "okaytoo"
+            }
+        }
+    });
+
+    const headers = await requestHeaders("/headers-example");
+    if (headers.get("test") !== "okay" || headers.get("test2") !== "okaytoo") throw new Error("Headers not set properly")
 });
 
 setInterval(() => {
