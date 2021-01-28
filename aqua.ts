@@ -41,24 +41,24 @@ export interface Request {
     matches: string[];
 }
 
-export interface Route {
+interface RouteTemplate {
+    options?: RoutingOptions;
+    responseHandler: ResponseHandler;
+}
+
+export interface StringRoute extends RouteTemplate {
     path: string;
     usesURLParameters: boolean;
     urlParameterRegex?: RegExp;
-    responseHandler: ResponseHandler;
-    options?: RoutingOptions;
 }
 
-export interface RegexRoute {
+export interface RegexRoute extends RouteTemplate {
     path: RegExp;
-    responseHandler: ResponseHandler;
-    options?: RoutingOptions;
 }
 
-export interface StaticRoute {
+export interface StaticRoute extends RouteTemplate {
     folder: string;
     path: string;
-    options?: RoutingOptions;
 }
 
 export interface Options {
@@ -104,7 +104,7 @@ export default class Aqua {
     private readonly textDecoder: TextDecoder;
     private readonly textEncoder: TextEncoder;
     private readonly servers: Server[] = [];
-    private routes: { [path: string]: Route; } = {};
+    private routes: { [path: string]: StringRoute; } = {};
     private regexRoutes: RegexRoute[] = [];
     private staticRoutes: StaticRoute[] = [];
     private options: Options = {};
@@ -251,7 +251,7 @@ export default class Aqua {
         }, {});
     }
 
-    private connectURLParameters(route: Route, requestedPath: string): { [name: string]: string; } {
+    private connectURLParameters(route: StringRoute, requestedPath: string): { [name: string]: string; } {
         return route.path.match(/:([a-zA-Z0-9_]*)/g)?.reduce((storage: { urlParameters: any; currentRequestedPath: string; }, urlParameterWithColon: string) => {
             const urlParameter = urlParameterWithColon.replace(":", "");
             const partTillParameter = route.path.split(urlParameterWithColon)[0];
@@ -271,36 +271,66 @@ export default class Aqua {
         }, { urlParameters: {}, currentRequestedPath: requestedPath }).urlParameters;
     }
 
+    private isTextContent(rawResponse: RawResponse): rawResponse is string {
+        return typeof rawResponse === "string";
+    }
+
+    private isDataContent(rawResponse: RawResponse): rawResponse is Uint8Array {
+        return rawResponse instanceof Uint8Array;
+    }
+
     private formatRawResponse(rawResponse: RawResponse): Response {
-        if (typeof rawResponse === "string") {
+        if (this.isTextContent(rawResponse)) {
             return {
                 headers: { "Content-Type": "text/html; charset=UTF-8" },
                 content: rawResponse
             }
         }
 
-        if (rawResponse instanceof Uint8Array) {
+        if (this.isDataContent(rawResponse)) {
             return { content: rawResponse };
         }
 
         return rawResponse;
     }
 
-    private isRegexRoute(route: Route | RegexRoute | StaticRoute): boolean {
-        return route.path instanceof RegExp;
+    private isRegexPath(path: string | RegExp): path is RegExp {
+        return path instanceof RegExp;
     }
 
     private async getResponseAfterApplyingMiddlewares(req: Request, res: Response): Promise<Response> {
-        let responseAfterMiddlewares = res;
+        let responseAfterMiddlewares: Response = res;
         for (const middleware of this.middlewares) {
             responseAfterMiddlewares = await middleware(req, responseAfterMiddlewares);
         }
         return responseAfterMiddlewares;
     }
 
-    private async respondToRequest(req: Request, requestedPath: string, route: Route | RegexRoute | StaticRoute, additionalResponseOptions: { usesURLParameters?: boolean; customResponseHandler?: ResponseHandler | undefined; } = { usesURLParameters: false, customResponseHandler: undefined }) {
+    private convertResponseToServerResponse(res: Response): ServerResponse {
+        const headers: Headers = new Headers(res.headers || {});
+        let statusCode: number | undefined = res.statusCode;
+
+        if (res.cookies) {
+            for (const cookieName of Object.keys(res.cookies)) {
+                headers.append("Set-Cookie", `${cookieName}=${res.cookies[cookieName]}`);
+            }
+        }
+
+        if (res.redirect) {
+            headers.append("Location", res.redirect);
+            statusCode ||= 301;
+        }
+
+        return {
+            headers,
+            body: res.content,
+            status: statusCode || 200
+        }
+    }
+
+    private async respondToRequest(req: Request, requestedPath: string, route: StringRoute | RegexRoute | StaticRoute, additionalResponseOptions: { usesURLParameters?: boolean; customResponseHandler?: ResponseHandler | undefined; } = { usesURLParameters: false, customResponseHandler: undefined }) {
         if (additionalResponseOptions.usesURLParameters) {
-            req.parameters = this.connectURLParameters(route as Route, requestedPath);
+            req.parameters = this.connectURLParameters(route as StringRoute, requestedPath);
 
             if (Object.values(req.parameters).find((parameterValue) => parameterValue === "") !== undefined) {
                 await this.respondWithNoRouteFound(req);
@@ -327,9 +357,14 @@ export default class Aqua {
             }
         }
 
-        if (this.isRegexRoute(route)) req.matches = (requestedPath.match(route.path) as string[]).slice(1) || [];
+        if (this.isRegexPath(route.path)) req.matches = (requestedPath.match(route.path) as string[]).slice(1) || [];
 
-        const formattedResponse: Response = this.formatRawResponse(await (additionalResponseOptions.customResponseHandler ? additionalResponseOptions.customResponseHandler(req) : (route as Route | RegexRoute).responseHandler(req)));
+        const formattedResponse: Response = this.formatRawResponse(
+            await (additionalResponseOptions.customResponseHandler
+                ? additionalResponseOptions.customResponseHandler(req)
+                : (route as StringRoute | RegexRoute).responseHandler(req)
+            )
+        );
 
         if (!formattedResponse) {
             req.raw.respond({ body: "No response content provided." });
@@ -337,56 +372,33 @@ export default class Aqua {
         }
 
         const responseAfterMiddlewares: Response = await this.getResponseAfterApplyingMiddlewares(req, formattedResponse);
-        const headers: Headers = new Headers(formattedResponse.headers || {});
-
-        if (formattedResponse.cookies) {
-            for (const cookieName of Object.keys(formattedResponse.cookies))
-                headers.append("Set-Cookie", `${cookieName}=${formattedResponse.cookies[cookieName]}`);
-        }
-
-        if (formattedResponse.redirect) {
-            headers.append("Location", formattedResponse.redirect);
-            responseAfterMiddlewares.statusCode = responseAfterMiddlewares.statusCode || 301;
-        }
-
-        req.raw.respond({
-            headers,
-            status: responseAfterMiddlewares.statusCode,
-            body: responseAfterMiddlewares.content || "No response content provided."
-        });
+        const serverResponse: ServerResponse = this.convertResponseToServerResponse(responseAfterMiddlewares);
+        req.raw.respond(serverResponse);
     }
 
-    private async respondWithNoRouteFound(req: Request): Promise<void> {
+    private async getFallbackHandlerResponse(req: Request): Promise<Response> {
         if (this.fallbackHandler) {
             const fallbackResponse: Response = this.formatRawResponse(await this.fallbackHandler(req));
 
             if (!fallbackResponse) {
-                req.raw.respond({ status: 404, body: "No registered route found." });
-                return;
+                return { statusCode: 404, content: "Not found." };
             }
 
-            fallbackResponse.statusCode = fallbackResponse.redirect
-                ? fallbackResponse.statusCode || 301
-                : fallbackResponse.statusCode || 404;
-            const headers: Headers = new Headers(fallbackResponse.headers || {});
+            const statusCode = !fallbackResponse.redirect && fallbackResponse.statusCode || 404;
 
-            if (fallbackResponse.cookies) {
-                for (const cookieName of Object.keys(fallbackResponse.cookies))
-                    headers.append("Set-Cookie", `${cookieName}=${fallbackResponse.cookies[cookieName]}`);
-            }
-
-            if (fallbackResponse.redirect)
-                headers.append("Location", fallbackResponse.redirect);
-
-            req.raw.respond({
-                headers,
-                status: fallbackResponse.statusCode,
-                body: fallbackResponse.content || "No fallback response content provided."
-            });
-            return;
+            return {
+                statusCode,
+                headers: fallbackResponse.headers,
+                content: fallbackResponse.content || "No fallback response content provided."
+            };
         }
 
-        req.raw.respond({ status: 404, body: "No registered route found." });
+        return { statusCode: 404, content: "Not found." };
+    }
+
+    private async respondWithNoRouteFound(req: Request): Promise<void> {
+        const serverResponse = this.convertResponseToServerResponse(await this.getFallbackHandlerResponse(req));
+        req.raw.respond(serverResponse);
     }
 
     private spinUpServers() {
@@ -395,18 +407,19 @@ export default class Aqua {
         }
     }
 
-    private async handleStaticRequest(_req: Request, requestedPath: string, staticRoute: StaticRoute): Promise<ContentResponse> {
-        const resourcePath: string = requestedPath.replace(staticRoute.path, "");
+    private async handleStaticRequest(req: Request, { path, folder }: { path: string; folder: string; }): Promise<Response> {
+        const requestedPath = Router.parseRequestPath(req.url);
+        const resourcePath: string = requestedPath.replace(path, "");
         const extension: string = resourcePath.replace(/.*(?=\.[a-zA-Z0-9_]*$)/, "");
         const contentType: string | null = extension ? ContentHandler.getContentType(extension) : null;
 
         try {
             return {
                 headers: contentType ? { "Content-Type": contentType } : undefined,
-                content: await Deno.readFile(staticRoute.folder + resourcePath)
+                content: await Deno.readFile(folder + resourcePath)
             };
         }catch {
-            return { statusCode: 404, content: "File not found" };
+            return await this.getFallbackHandlerResponse(req);
         }
     }
 
@@ -456,10 +469,7 @@ export default class Aqua {
                     const matchingStaticRoute = Router.findMatchingStaticRoute(requestedPath, this.staticRoutes);
 
                     if (matchingStaticRoute) {
-                        await this.respondToRequest(req, requestedPath, matchingStaticRoute, {
-                            customResponseHandler: async (req: Request) =>
-                                await this.handleStaticRequest(req, requestedPath, matchingStaticRoute)
-                        });
+                        await this.respondToRequest(req, requestedPath, matchingStaticRoute);
                         continue;
                     }
                 }
@@ -498,7 +508,7 @@ export default class Aqua {
             urlParameterRegex: usesURLParameters ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^\/]*)")) : undefined,
             responseHandler,
             options
-        } as Route;
+        } as StringRoute;
         return this;
     }
 
@@ -512,9 +522,14 @@ export default class Aqua {
         return this;
     }
 
-    public serve(folder: string, path: string) {
+    public serve(folder: string, path: string, options: RoutingOptions = {}) {
         if (!path.startsWith("/")) throw Error("Routes must start with a slash");
-        this.staticRoutes.push({ folder: folder.replace(/\/$/, "") + "/", path: path.replace(/\/$/, "") + "/" });
+        this.staticRoutes.push({
+            folder: folder.replace(/\/$/, "") + "/",
+            path: path.replace(/\/$/, "") + "/",
+            responseHandler: async (req) => await this.handleStaticRequest(req, { path, folder }),
+            options
+        });
         return this;
     }
 }
