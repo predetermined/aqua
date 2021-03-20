@@ -443,9 +443,10 @@ export default class Aqua {
             const requestedPath = Router.parseRequestPath(req.url);
 
             if (this.options.log) {
+                console.log(`\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath}\x1b[0m`);
                 (req.raw as ServerRequestWithRawRespond).rawRespond = rawRequest.respond;
                 req.raw.respond = async (res: ServerResponse) => {
-                    console.log(`\x1b[33m${req.method}`, `\x1b[0m${requestedPath}`, `-> \x1b[36m${res.status || 200}\x1b[0m`);
+                    console.log(`\x1b[33m${req.method} \x1b[0m(\x1b[36mResponded\x1b[0m) \x1b[0m${requestedPath} -> \x1b[36m${res.status || 200}\x1b[0m`);
                     await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
                 }
             }
@@ -454,14 +455,14 @@ export default class Aqua {
                 const matchingRouteWithURLParameters = Router.findRouteWithMatchingURLParameters(requestedPath, this.routes);
 
                 if (matchingRouteWithURLParameters) {
-                    await this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, { usesURLParameters: true });
+                    this.respondToRequest(req, requestedPath, matchingRouteWithURLParameters, { usesURLParameters: true });
                     continue;
                 }
 
                 const matchingRegexRoute = Router.findMatchingRegexRoute(requestedPath, this.regexRoutes);
 
                 if (matchingRegexRoute) {
-                    await this.respondToRequest(req, requestedPath, matchingRegexRoute as RegexRoute);
+                    this.respondToRequest(req, requestedPath, matchingRegexRoute as RegexRoute);
                     continue;
                 }
 
@@ -469,14 +470,14 @@ export default class Aqua {
                     const matchingStaticRoute = Router.findMatchingStaticRoute(requestedPath, this.staticRoutes);
 
                     if (matchingStaticRoute) {
-                        await this.respondToRequest(req, requestedPath, matchingStaticRoute);
+                        this.respondToRequest(req, requestedPath, matchingStaticRoute);
                         continue;
                     }
                 }
 
-                await this.respondWithNoRouteFound(req);
+                this.respondWithNoRouteFound(req);
             }else {
-                await this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
+                this.respondToRequest(req, requestedPath, this.routes[req.method + requestedPath]);
             }
         }
     }
