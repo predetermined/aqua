@@ -32,7 +32,7 @@ export interface Request {
     raw: ServerRequest;
     url: string;
     method: Method;
-    headers: Headers;
+    headers: { [name: string]: string; };
     query: { [name: string]: string; };
     body: { [name: string]: string; };
     files: { [name: string]: File; };
@@ -438,7 +438,7 @@ export default class Aqua {
             const req: Request = {
                 raw: rawRequest,
                 url: rawRequest.url,
-                headers: rawRequest.headers,
+                headers: Object.fromEntries(rawRequest.headers),
                 method: (rawRequest.method.toUpperCase() as Method),
                 query: rawRequest.url.includes("?") ? this.parseQuery(rawRequest) : {},
                 body,
