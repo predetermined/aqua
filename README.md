@@ -49,6 +49,7 @@ query (for example, `GET /?hello=yes`).
 The following helper functions are currently available:
 * `mustExist(key)`
 * `valueMustBeOfType(key, type)`
+* `mustContainValue(key, values)`
 
 You can of course also build your own schema validation functions.
 Here's how the `mustExist` function looks:

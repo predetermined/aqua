@@ -72,7 +72,7 @@ export interface Options {
     }
 }
 
-export type RoutingSchemaValidationFunction = (this: RoutingSchemaValidationContext) => boolean;
+export type RoutingSchemaValidationFunction = (this: RoutingSchemaValidationContext, context: RoutingSchemaValidationContext) => boolean;
 
 interface RoutingSchemaValidationContext {
     [name: string]: any;
@@ -97,6 +97,12 @@ export function mustExist(key: string): RoutingSchemaValidationFunction {
 export function valueMustBeOfType(key: string, type: "string" | "number" | "boolean" | "object" | "undefined"): RoutingSchemaValidationFunction {
     return function() {
         return Object.keys(this).includes(key) && typeof this[key] === type;
+    }
+}
+
+export function mustContainValue(key: string, values: any[]): RoutingSchemaValidationFunction {
+    return function() {
+        return Object.keys(this).includes(key) && values.includes(this[key]);
     }
 }
 
@@ -344,7 +350,8 @@ export default class Aqua {
             routingSchemaIterator:
                 for (const routingSchemaKey of Object.keys(route.options.schema) as RoutingSchemaKeys[]) {
                     for (const validationFunction of route.options.schema[routingSchemaKey] || []) {
-                        if (!validationFunction.bind(req[routingSchemaKey])()) {
+                        const schemaContext = req[routingSchemaKey];
+                        if (!validationFunction.bind(schemaContext)(schemaContext)) {
                             passedAllValidations = false;
                             break routingSchemaIterator;
                         }

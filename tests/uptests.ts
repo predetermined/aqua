@@ -240,23 +240,28 @@ registerTest("File uploading with multiple files working?", async () => {
 });
 
 registerTest("mustExist function working?", async () => {
-    if (!mustExist("test").bind({ test: 1 })()) throw Error("mustExist function returned wrong value");
+    const schemaContext = { test: 1 };
+    if (!mustExist("test").bind(schemaContext)(schemaContext)) throw Error("mustExist function returned wrong value");
 });
 
 registerTest("mustExist function working if key not found?", async () => {
-    if (mustExist("test").bind({ test2: 1 })()) throw Error("mustExist function returned wrong value");
+    const schemaContext = { test2: 1 };
+    if (mustExist("test").bind(schemaContext)(schemaContext)) throw Error("mustExist function returned wrong value");
 });
 
 registerTest("valueMustBeByType function working?", async () => {
-    if (!valueMustBeOfType("test", "number").bind({ test: 1 })()) throw Error("valueMustBeByType function returned wrong value");
+    const schemaContext = { test: 1 };
+    if (!valueMustBeOfType("test", "number").bind(schemaContext)(schemaContext)) throw Error("valueMustBeByType function returned wrong value");
 });
 
 registerTest("valueMustBeByType function working if key not found?", async () => {
-    if (valueMustBeOfType("test", "string").bind({ test2: "test" })()) throw Error("valueMustBeByType function returned wrong value");
+    const schemaContext = { test2: "test" };
+    if (valueMustBeOfType("test", "string").bind(schemaContext)(schemaContext)) throw Error("valueMustBeByType function returned wrong value");
 });
 
 registerTest("valueMustBeByType function working if key value has a different type?", async () => {
-    if (valueMustBeOfType("test", "string").bind({ test: false })()) throw Error("valueMustBeByType function returned wrong value");
+    const schemaContext = { test: false };
+    if (valueMustBeOfType("test", "string").bind(schemaContext)(schemaContext)) throw Error("valueMustBeByType function returned wrong value");
 });
 
 registerTest("Replacement of raw file content working?", async () => {
