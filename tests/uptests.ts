@@ -312,6 +312,25 @@ registerTest("Headers set?", async () => {
     if (headers.get("test") !== "okay" || headers.get("test2") !== "okaytoo") throw new Error("Headers not set properly")
 });
 
+registerTest("Headers received correct?", async () => {
+    const testHeaders = {
+        hello: "okay",
+        world: "test"
+    }
+
+    app.get("/headers-receive-example", async req => {
+        return JSON.stringify({
+            hello: req.headers.hello,
+            world: req.headers.world
+        })
+    });
+
+    const receivedHeaders = await requestContent("/headers-receive-example", {
+        headers: testHeaders
+    });
+    if (receivedHeaders !== JSON.stringify(testHeaders)) throw new Error("Headers not received properly")
+});
+
 setInterval(() => {
     if (registeredTests === solvedTests) Deno.exit(0);
 }, 500);
