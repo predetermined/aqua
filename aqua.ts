@@ -809,11 +809,3 @@ export default class Aqua extends RouteContext {
         return context;
     }
 }
-
-const test = new Aqua(3000);
-
-test.get("/wow", () => "base route, yeay!");
-test.get("/", () => "yeay");
-test.group("/hello/", (context) => {
-    context.get("/yo", () => "yoooo");
-});
