@@ -67,11 +67,11 @@ the `mustExist` function looks:
 ```typescript
 function mustExist(key: string): RoutingSchemaValidationFunction {
   return function () {
-    /*
-            `this` depends on the context, it could either be the 
-            query, parameters, cookies or body object.
-            Luckily, they all have the same type.
-        */
+    /**
+     * `this` depends on the context, it could either be the
+     * query, parameters, cookies or body object.
+     * Luckily, they all have the same type.
+     */
     return Object.keys(this).includes(key);
   };
 }
@@ -84,12 +84,12 @@ the following way:
 
 ```typescript
 app.register((req, res) => {
-  /*
-        const textContent = res.content instanceof Uint8Array 
-            ? new TextDecoder().decode(res.content)
-            : res.content;
-        res.content = textContent?.replace("Hello", "Hi");
-    */
+  /**
+   * Skip Uint8Array responses:
+   * if (typeof res.content !== "string") return res;
+   * 
+   * res.content = textContent?.replace("Hello", "Hi");
+   */
   return res;
 });
 ```
