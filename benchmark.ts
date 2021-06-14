@@ -6,10 +6,23 @@ import { Server } from "https://deno.land/x/fen@v0.8.0/server.ts";
 import { Application as ABCApplication } from "https://deno.land/x/abc@v1.2.0/mod.ts";
 
 class Benchmark {
-    private results: { name: string; result: { average: number; min: number; max: number; } }[] = [];
+    private results: {
+        name: string;
+        result: { average: number; min: number; max: number };
+    }[] = [];
 
     public async test(name: string, port: number) {
-        const { average, min, max }: { average: number; min: number; max: number; } = JSON.parse((await exec(`npx autocannon -c100 -j localhost:${port}`, { output: OutputMode.Capture })).output).requests;
+        const {
+            average,
+            min,
+            max,
+        }: { average: number; min: number; max: number } = JSON.parse(
+            (
+                await exec(`npx autocannon -c100 -j localhost:${port}`, {
+                    output: OutputMode.Capture,
+                })
+            ).output
+        ).requests;
 
         console.log(`Tested ${name} - AVG: ${average}`);
         this.results.push({
@@ -17,15 +30,17 @@ class Benchmark {
             result: {
                 average,
                 min,
-                max
-            }
+                max,
+            },
         });
     }
 
     get result(): string {
-        return this.results.map(({ name, result: { average, min, max } }) => {
-            return `${name}: [AVG: ${average}; MIN: ${min}; MAX: ${max}]`;
-        }).join("\n");
+        return this.results
+            .map(({ name, result: { average, min, max } }) => {
+                return `${name}: [AVG: ${average}; MIN: ${min}; MAX: ${max}]`;
+            })
+            .join("\n");
     }
 }
 
@@ -56,18 +71,18 @@ class HomeResource extends Drash.Http.Resource {
 }
 const drash = new Drash.Http.Server({
     response_output: "text/html",
-    resources: [HomeResource]
+    resources: [HomeResource],
 });
 drash.run({
     hostname: "localhost",
-    port: 3002
+    port: 3002,
 });
 await benchmark.test("drash", 3002);
 
 // Fen
 const fenServer = new Server();
 fenServer.setController(async (context: any) => {
-  context.body = "Hello Deno!";
+    context.body = "Hello Deno!";
 });
 fenServer.port = 3003;
 fenServer.start();
@@ -76,10 +91,10 @@ await benchmark.test("fen", 3003);
 // Abc
 const abcServer = new ABCApplication();
 abcServer
-  .get("/hello", (c: any) => {
-    return "Hello Deno!";
-  })
-  .start({ port: 3004 });
+    .get("/hello", (c: any) => {
+        return "Hello Deno!";
+    })
+    .start({ port: 3004 });
 await benchmark.test("abc", 3004);
 
 console.log(benchmark.result);

@@ -1,5 +1,5 @@
 export default class ContentHandler {
-    public static contentTypes: { [extension: string]: string; } = {
+    public static contentTypes: { [extension: string]: string } = {
         ".aac": "audio/aac",
         ".abw": "application/x-abiword",
         ".ai": "application/postscript",
@@ -70,7 +70,7 @@ export default class ContentHandler {
         ".xml": "application/xml",
         ".xul": "application/vnd.mozilla.xul+xml",
         ".zip": "application/zip",
-        ".7z": "application/x-7z-compressed"
+        ".7z": "application/x-7z-compressed",
     };
 
     public static getContentType(extension: string): string | null {
