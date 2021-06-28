@@ -88,7 +88,7 @@ app.register((req, res) => {
    * Skip Uint8Array responses:
    * if (typeof res.content !== "string") return res;
    * 
-   * res.content = textContent?.replace("Hello", "Hi");
+   * res.content = res.content.replace("Hello", "Hi");
    */
   return res;
 });
