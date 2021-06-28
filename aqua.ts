@@ -170,7 +170,7 @@ class Server {
     }
 
     if (res.redirect) {
-      formattedResponseHeaders.push(`Location=${res.redirect}`);
+      formattedResponseHeaders.push(`Location: ${res.redirect}`);
       res.statusCode ||= 301;
     }
 
@@ -193,7 +193,8 @@ class Server {
       .reduce((headers: Record<string, string>, headerString) => {
         if (!headerString.includes(":")) return headers;
         const [headerName, headerValue] = headerString.split(":");
-        headers[headerName] = decodeURIComponent(headerValue).trimLeft();
+        headers[headerName] = decodeURIComponent(headerValue).trimLeft()
+          .replace(/\r/g, "");
         return headers;
       }, {});
   }
@@ -206,8 +207,11 @@ class Server {
   }
 
   private interpretRequest(plainRequest: string): InterpretedServerRequest {
-    const [infoString, _, data] = plainRequest.split(/\n(\r|)\n/);
-    return { info: infoString.split("\n"), data };
+    const [infoString, ...data] = plainRequest.split(/(\n)(\r|)(\n)/);
+    return {
+      info: infoString.split("\n"),
+      data: data.join("").replace(/\x00|^((\r|)(\n|))*/g, ""),
+    };
   }
 
   private async acceptNewRequest() {
@@ -229,7 +233,7 @@ class Server {
       : 0;
 
     let requestBuffer = buffer;
-    if (specifiedContentLength) {
+    if (specifiedContentLength > this.DEFAULT_REQUEST_BUFFER_SIZE) {
       // read remaining content
       const adjustedBuffer = new Uint8Array(
         this.DEFAULT_REQUEST_BUFFER_SIZE + specifiedContentLength,
