@@ -143,7 +143,8 @@ class Server {
   private readonly listener: Deno.Listener;
   private readonly interceptor: Interceptor;
   // Guessed size to read at least all headers
-  private DEFAULT_REQUEST_BUFFER_SIZE = 4096;
+  private BUFFER_STEP_SIZE = 1024;
+  private AMOUNT_OF_EMPTY_DATA_ENTRIES_TO_STOP_READING = 75;
 
   constructor(
     options: (Deno.ListenOptions | Deno.ListenTlsOptions),
@@ -178,11 +179,24 @@ class Server {
       ? res.content
       : textEncoder.encode(res.content);
 
+    let infoResultWithUncontrolledNewLines = textEncoder.encode(
+      "HTTP/1.1 " + (res.statusCode || 200) + "\nServer: Aqua\n" +
+        formattedResponseHeaders.join("\n"),
+    );
+
+    // If [-1] is a new line, remove it
+    if (
+      infoResultWithUncontrolledNewLines[
+        infoResultWithUncontrolledNewLines.length - 1
+      ] === 10
+    ) {
+      infoResultWithUncontrolledNewLines = infoResultWithUncontrolledNewLines
+        .slice(0, infoResultWithUncontrolledNewLines.length - 1);
+    }
+
     return new Uint8Array([
-      ...textEncoder.encode(
-        "HTTP/1.1 " + (res.statusCode || 200) + "\nServer: Aqua\n" +
-          formattedResponseHeaders.join("\n") + "\n\n",
-      ),
+      ...infoResultWithUncontrolledNewLines,
+      ...new Uint8Array([10, 10]),
       ...encodedContent,
     ]);
   }
@@ -218,8 +232,26 @@ class Server {
     const conn = await this.listener.accept();
     this.acceptNewRequest();
 
-    const buffer = new Uint8Array(this.DEFAULT_REQUEST_BUFFER_SIZE);
+    let buffer: Uint8Array = new Uint8Array(this.BUFFER_STEP_SIZE);
     await conn.read(buffer);
+
+    while (
+      !buffer.slice(
+        buffer.length - this.AMOUNT_OF_EMPTY_DATA_ENTRIES_TO_STOP_READING,
+      ).every((r) => r === 0)
+    ) {
+      const tempBuffer = new Uint8Array(this.BUFFER_STEP_SIZE);
+      await conn.read(tempBuffer);
+      buffer = new Uint8Array([...buffer, ...tempBuffer]);
+    }
+
+    for (let i = buffer.length - 1; i > 0; i--) {
+      // reached the end of empty data hell
+      if (buffer[i] !== 0) {
+        buffer = buffer.slice(0, i + 1);
+        break;
+      }
+    }
 
     let interpretedRequest = this.interpretRequest(
       textDecoder.decode(buffer),
@@ -228,32 +260,12 @@ class Server {
     const headers = this.parseHeaders(interpretedRequest);
     const httpInfo = this.parseHttpInfo(interpretedRequest);
 
-    const specifiedContentLength = headers["Content-Length"]
-      ? parseInt(headers["Content-Length"])
-      : 0;
-
-    let requestBuffer = buffer;
-    if (specifiedContentLength > this.DEFAULT_REQUEST_BUFFER_SIZE) {
-      // read remaining content
-      const adjustedBuffer = new Uint8Array(
-        this.DEFAULT_REQUEST_BUFFER_SIZE + specifiedContentLength,
-      );
-      await conn.read(adjustedBuffer);
-
-      const finalBuffer = new Uint8Array([...buffer, ...adjustedBuffer]);
-
-      requestBuffer = finalBuffer;
-      interpretedRequest = this.interpretRequest(
-        textDecoder.decode(finalBuffer),
-      );
-    }
-
     const response = this.convertToFinalResponseFormat(
       await this.interceptor({
         ...httpInfo,
         headers,
         data: interpretedRequest.data,
-        buffer: requestBuffer,
+        buffer,
       }),
     );
 
