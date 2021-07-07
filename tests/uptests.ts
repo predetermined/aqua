@@ -153,7 +153,7 @@ registerTest("Body parsing working if passed FormData?", async () => {
     body: f,
   });
   if (content !== "hello") {
-    throw Error("Body parsing of FormData isn't working");
+    throw Error(`Body parsing of FormData isn't working (${content})`);
   }
 });
 
@@ -295,7 +295,7 @@ registerTest("File uploading working?", async () => {
 
   const content = await requestContent("/upload", { method: "post", body: f });
   if (content !== "1255") {
-    throw Error("File uploading route returned a wrong file size");
+    throw Error(`File uploading route returned a wrong file size (${content})`);
   }
 });
 
