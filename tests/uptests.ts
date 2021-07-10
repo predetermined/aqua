@@ -143,16 +143,17 @@ registerTest("Body parsing working if passed form-urlencoded?", async () => {
 });
 
 registerTest("Body parsing working if passed FormData?", async () => {
-  app.post("/test-formdata-body-parsing", (req) => req.body.test);
+  app.post("/test-formdata-body-parsing", (req) => req.body.test + " " + req.body.test2);
 
   const f = new FormData();
   f.append("test", "hello");
+  f.append("test2", "world");
 
   const content = await requestContent(`/test-formdata-body-parsing`, {
     method: "post",
     body: f,
   });
-  if (content !== "hello") {
+  if (content !== "hello world") {
     throw Error("Body parsing of FormData isn't working");
   }
 });
