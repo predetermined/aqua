@@ -4,7 +4,7 @@ import {
   Server,
   ServerRequest,
   serveTLS,
-} from "https://deno.land/std@0.99.0/http/server.ts";
+} from "https://deno.land/std@0.100.0/http/server.ts";
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
