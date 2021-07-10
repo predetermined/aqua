@@ -8,6 +8,8 @@ import {
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
+let test = true;
+
 type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
 type Method =
   | "GET"
