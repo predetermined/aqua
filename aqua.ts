@@ -205,7 +205,7 @@ class Server {
 
     return new Uint8Array([
       ...infoResultWithUncontrolledNewLines,
-      ...new Uint8Array([13, 10, 13, 10]),
+      ...new Uint8Array([10, 10]),
       ...encodedContent,
     ]);
   }
