@@ -142,9 +142,10 @@ const textEncoder = new TextEncoder();
 class Server {
   private readonly listener: Deno.Listener;
   private readonly interceptor: Interceptor;
-  // Guessed size to read at least all headers
+  private isClosed: boolean = false;
+  private WAIT_FOR_NEXT_READ_TIMEOUT_MS = 15;
+  private FIRST_READ_SIZE = 256;
   private BUFFER_STEP_SIZE = 1024;
-  private AMOUNT_OF_EMPTY_DATA_ENTRIES_TO_STOP_READING = 75;
 
   constructor(
     options: (Deno.ListenOptions | Deno.ListenTlsOptions),
@@ -152,7 +153,14 @@ class Server {
   ) {
     this.listener = Deno.listen(options);
     this.interceptor = interceptor;
-    this.acceptNewRequest();
+    this.listenToRequests();
+  }
+
+  private async listenToRequests() {
+    while (!this.isClosed) {
+      const conn = await this.listener.accept();
+      this.acceptRequest(conn);
+    }
   }
 
   private convertToFinalResponseFormat(res: Response): Uint8Array {
@@ -180,8 +188,9 @@ class Server {
       : textEncoder.encode(res.content);
 
     let infoResultWithUncontrolledNewLines = textEncoder.encode(
-      "HTTP/1.1 " + (res.statusCode || 200) + "\nServer: Aqua\n" +
-        formattedResponseHeaders.join("\n"),
+      "HTTP/1.1 " + (res.statusCode || 200) + "\r\nServer: Aqua\r\n" +
+        `Content-Length: ${encodedContent.byteLength}\r\n` +
+        formattedResponseHeaders.join("\r\n"),
     );
 
     // If [-1] is a new line, remove it
@@ -196,7 +205,7 @@ class Server {
 
     return new Uint8Array([
       ...infoResultWithUncontrolledNewLines,
-      ...new Uint8Array([10, 10]),
+      ...new Uint8Array([13, 10, 13, 10]),
       ...encodedContent,
     ]);
   }
@@ -207,8 +216,7 @@ class Server {
       .reduce((headers: Record<string, string>, headerString) => {
         if (!headerString.includes(":")) return headers;
         const [headerName, headerValue] = headerString.split(":");
-        headers[headerName] = decodeURIComponent(headerValue).trimLeft()
-          .replace(/\r/g, "");
+        headers[headerName] = decodeURIComponent(headerValue).trimLeft();
         return headers;
       }, {});
   }
@@ -223,42 +231,69 @@ class Server {
   private interpretRequest(plainRequest: string): InterpretedServerRequest {
     const [infoString, ...data] = plainRequest.split(/(\n)(\r|)(\n)/);
     return {
-      info: infoString.split("\n"),
+      info: infoString.replace(/\r/g, "").split("\n"),
       data: data.join("").replace(/\x00|^((\r|)(\n|))*/g, ""),
     };
   }
 
-  private async acceptNewRequest() {
-    const conn = await this.listener.accept();
-    this.acceptNewRequest();
+  private async acceptRequest(conn: Deno.Conn) {
+    let buffer: Uint8Array = new Uint8Array(this.FIRST_READ_SIZE);
+    let lastReadSize = await conn.read(buffer) ?? 0;
+    buffer = buffer.slice(0, lastReadSize);
 
-    let buffer: Uint8Array = new Uint8Array(this.BUFFER_STEP_SIZE);
-    await conn.read(buffer);
-
-    while (
-      !buffer.slice(
-        buffer.length - this.AMOUNT_OF_EMPTY_DATA_ENTRIES_TO_STOP_READING,
-      ).every((r) => r === 0)
-    ) {
-      const tempBuffer = new Uint8Array(this.BUFFER_STEP_SIZE);
-      await conn.read(tempBuffer);
-      buffer = new Uint8Array([...buffer, ...tempBuffer]);
+    // Loaded full buffer, needs more space
+    while (lastReadSize === this.FIRST_READ_SIZE) {
+      const tempBuffer = new Uint8Array(this.FIRST_READ_SIZE);
+      const readLength = await conn.read(tempBuffer) ?? 0;
+      buffer = new Uint8Array([...buffer, ...tempBuffer.slice(0, readLength)]);
+      lastReadSize = readLength;
     }
 
-    for (let i = buffer.length - 1; i > 0; i--) {
-      // reached the end of empty data hell
-      if (buffer[i] !== 0) {
-        buffer = buffer.slice(0, i + 1);
-        break;
+    let decodedRequest = textDecoder.decode(buffer);
+
+    if (decodedRequest.match(/Content-Length/i)) {
+      while (true) {
+        const tempBuffer = new Uint8Array(this.BUFFER_STEP_SIZE);
+
+        const readLength: number | undefined | null = await Promise.race([
+          conn.read(tempBuffer),
+          new Promise((resolve) =>
+            setTimeout(resolve, this.WAIT_FOR_NEXT_READ_TIMEOUT_MS)
+          ),
+        ]) as number | undefined | null;
+
+        if (!readLength) break;
+        buffer = new Uint8Array([
+          ...buffer,
+          ...tempBuffer.slice(0, readLength),
+        ]);
       }
+      decodedRequest = textDecoder.decode(buffer);
+    }
+
+    if (buffer.length === 0) {
+      await conn.write(
+        textEncoder.encode("HTTP/1.1 400 Bad Request\r\nServer: Aqua"),
+      );
+      conn.close();
+      return;
     }
 
     let interpretedRequest = this.interpretRequest(
-      textDecoder.decode(buffer),
+      decodedRequest,
     );
 
-    const headers = this.parseHeaders(interpretedRequest);
     const httpInfo = this.parseHttpInfo(interpretedRequest);
+
+    if (!httpInfo.url || !httpInfo.method) {
+      await conn.write(
+        textEncoder.encode("HTTP/1.1 400 Bad Request\r\nServer: Aqua"),
+      );
+      conn.close();
+      return;
+    }
+
+    const headers = this.parseHeaders(interpretedRequest);
 
     const response = this.convertToFinalResponseFormat(
       await this.interceptor({
@@ -276,6 +311,7 @@ class Server {
   }
 
   public close() {
+    this.isClosed = true;
     this.listener.close();
   }
 }
