@@ -8,7 +8,7 @@ import {
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
-type ResponseHandler = (req: Request) => (RawResponse | Promise<RawResponse>);
+type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
 type Method =
   | "GET"
   | "HEAD"
@@ -19,10 +19,11 @@ type Method =
   | "OPTIONS"
   | "TRACE"
   | "PATCH";
-type Middleware = (
+type OutgoingMiddleware = (
   req: Request,
   res: Response,
-) => (Response | Promise<Response>);
+) => Response | Promise<Response>;
+type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
 type RawResponse = string | Uint8Array | Response;
 export type Response = ContentResponse | RedirectResponse;
 
@@ -109,6 +110,11 @@ export interface RoutingOptions {
   schema?: RoutingSchema;
 }
 
+export enum MiddlewareType {
+  Incoming = "Incoming",
+  Outgoing = "Outgoing",
+}
+
 export function mustExist(key: string): RoutingSchemaValidationFunction {
   return function () {
     return Object.keys(this).includes(key);
@@ -141,7 +147,8 @@ export default class Aqua {
   private regexRoutes: RegexRoute[] = [];
   private staticRoutes: StaticRoute[] = [];
   private options: Options = {};
-  private middlewares: Middleware[] = [];
+  private incomingMiddlewares: IncomingMiddleware[] = [];
+  private outgoingMiddlewares: OutgoingMiddleware[] = [];
   private fallbackHandler: ResponseHandler | null = null;
 
   constructor(port: number, options?: Options) {
@@ -149,12 +156,14 @@ export default class Aqua {
       options?.tls?.independentPort === port;
 
     if (options?.tls) {
-      this.servers.push(serveTLS({
-        hostname: options.tls.hostname || "localhost",
-        certFile: options.tls.certFile || "./localhost.crt",
-        keyFile: options.tls.keyFile || "./localhost.key",
-        port: options.tls.independentPort || port,
-      }));
+      this.servers.push(
+        serveTLS({
+          hostname: options.tls.hostname || "localhost",
+          certFile: options.tls.certFile || "./localhost.crt",
+          keyFile: options.tls.keyFile || "./localhost.key",
+          port: options.tls.independentPort || port,
+        }),
+      );
     }
 
     if (!onlyTLS) this.servers.push(serve({ port }));
@@ -182,9 +191,10 @@ export default class Aqua {
 
   private async parseBody(
     req: ServerRequest,
-  ): Promise<
-    { body: { [name: string]: string }; files: { [name: string]: File } }
-  > {
+  ): Promise<{
+    body: { [name: string]: string };
+    files: { [name: string]: File };
+  }> {
     if (!req.contentLength) return { body: {}, files: {} };
 
     const buffer = await Deno.readAll(req.body);
@@ -193,90 +203,86 @@ export default class Aqua {
 
     if (!rawBody) return { body: {}, files: {} };
 
-    const files: { [name: string]: File } =
-      (rawBody.match(
+    const files: { [name: string]: File } = (
+      rawBody.match(
         /---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?(?=((\n|\r)--|$))/g,
-      ) || []).reduce(
-        (files: { [name: string]: File }, fileString: string, i) => {
-          const fileName = /filename="(.*?)"/.exec(fileString)?.[1];
-          const fileType = /Content-Type: (.*)/.exec(fileString)?.[1]?.trim();
-          const name = /name="(.*?)"/.exec(fileString)?.[1];
+      ) || []
+    ).reduce((files: { [name: string]: File }, fileString: string, i) => {
+      const fileName = /filename="(.*?)"/.exec(fileString)?.[1];
+      const fileType = /Content-Type: (.*)/.exec(fileString)?.[1]?.trim();
+      const name = /name="(.*?)"/.exec(fileString)?.[1];
 
-          if (!fileName || !name) return files;
+      if (!fileName || !name) return files;
 
-          const uniqueString = fileString.match(
-            /---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?/g,
-          )?.[0];
+      const uniqueString = fileString.match(
+        /---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?/g,
+      )?.[0];
 
-          if (!uniqueString) return files;
+      if (!uniqueString) return files;
 
-          const uniqueStringEncoded = this.textEncoder.encode(uniqueString);
-          const endSequence = this.textEncoder.encode("----");
+      const uniqueStringEncoded = this.textEncoder.encode(uniqueString);
+      const endSequence = this.textEncoder.encode("----");
 
-          let start = -1;
-          let end = buffer.length;
-          for (let i = 0; i < buffer.length; i++) {
-            if (start === -1) {
-              let matchedUniqueString = true;
-              let uniqueStringEncodedIndex = 0;
-              for (let j = i; j < i + uniqueStringEncoded.length; j++) {
-                if (
-                  buffer[j] !== uniqueStringEncoded[uniqueStringEncodedIndex]
-                ) {
-                  matchedUniqueString = false;
-                  break;
-                }
-                uniqueStringEncodedIndex++;
-              }
-
-              if (matchedUniqueString) {
-                i = start = i + uniqueStringEncoded.length;
-              }
-              continue;
-            }
-
-            let matchedEndSequence = true;
-            let endSequenceIndex = 0;
-            for (let j = i; j < i + endSequence.length; j++) {
-              if (buffer[j] !== endSequence[endSequenceIndex]) {
-                matchedEndSequence = false;
-                break;
-              }
-              endSequenceIndex++;
-            }
-
-            if (matchedEndSequence) {
-              end = i;
+      let start = -1;
+      let end = buffer.length;
+      for (let i = 0; i < buffer.length; i++) {
+        if (start === -1) {
+          let matchedUniqueString = true;
+          let uniqueStringEncodedIndex = 0;
+          for (let j = i; j < i + uniqueStringEncoded.length; j++) {
+            if (buffer[j] !== uniqueStringEncoded[uniqueStringEncodedIndex]) {
+              matchedUniqueString = false;
               break;
             }
+            uniqueStringEncodedIndex++;
           }
 
-          if (start === -1) return files;
+          if (matchedUniqueString) {
+            i = start = i + uniqueStringEncoded.length;
+          }
+          continue;
+        }
 
-          const fileBuffer = buffer.subarray(start, end);
-          const file = new File([fileBuffer], fileName, { type: fileType });
+        let matchedEndSequence = true;
+        let endSequenceIndex = 0;
+        for (let j = i; j < i + endSequence.length; j++) {
+          if (buffer[j] !== endSequence[endSequenceIndex]) {
+            matchedEndSequence = false;
+            break;
+          }
+          endSequenceIndex++;
+        }
 
-          return { [name]: file, ...files };
-        },
-        {},
-      );
+        if (matchedEndSequence) {
+          end = i;
+          break;
+        }
+      }
+
+      if (start === -1) return files;
+
+      const fileBuffer = buffer.subarray(start, end);
+      const file = new File([fileBuffer], fileName, { type: fileType });
+
+      return { [name]: file, ...files };
+    }, {});
 
     try {
       body = JSON.parse(rawBody);
     } catch (error) {
       if (rawBody.includes(`name="`)) {
-        body =
-          (rawBody.match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || [])
-            .reduce((fields: {}, field: string): { [name: string]: string } => {
-              if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
+        body = (
+          rawBody.match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || []
+        ).reduce((fields: {}, field: string): { [name: string]: string } => {
+          if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
 
-              return {
-                ...fields,
-                [/name="(.*?)"/.exec(field)?.[1] || ""]: field.match(
-                  /(.*?)(?=(\s|\n|\r)*---)/,
-                )?.[0],
-              };
-            }, {});
+          return {
+            ...fields,
+            [/name="(.*?)"/.exec(field)?.[1] || ""]: field.match(
+              /(.*?)(?=(\s|\n|\r)*---)/,
+            )?.[0],
+          };
+        }, {});
       } else {
         body = Object.fromEntries(new URLSearchParams(rawBody));
       }
@@ -298,15 +304,14 @@ export default class Aqua {
 
     if (!rawCookieString) return {};
 
-    return rawCookieString.split(";").reduce(
-      (cookies: {}, cookie: string): { [name: string]: string } => {
-        return {
-          ...cookies,
-          [cookie.split("=")[0].trimLeft()]: cookie.split("=")[1],
-        };
-      },
-      {},
-    );
+    return rawCookieString.split(";").reduce((cookies: {}, cookie: string): {
+      [name: string]: string;
+    } => {
+      return {
+        ...cookies,
+        [cookie.split("=")[0].trimLeft()]: cookie.split("=")[1],
+      };
+    }, {});
   }
 
   private connectURLParameters(
@@ -320,10 +325,12 @@ export default class Aqua {
       ) => {
         const urlParameter = urlParameterWithColon.replace(":", "");
         const partTillParameter = route.path.split(urlParameterWithColon)[0];
-        const urlParameterValue = storage.currentRequestedPath.replace(
-          new RegExp(partTillParameter.replace(/:([a-zA-Z0-9_]*)/, ".*?")),
-          "",
-        ).match(/([^\/]*)/g)?.[0];
+        const urlParameterValue = storage.currentRequestedPath
+          .replace(
+            new RegExp(partTillParameter.replace(/:([a-zA-Z0-9_]*)/, ".*?")),
+            "",
+          )
+          .match(/([^\/]*)/g)?.[0];
         const currentRequestedPath = storage.currentRequestedPath.replace(
           /:([a-zA-Z0-9_]*)/,
           "",
@@ -368,18 +375,26 @@ export default class Aqua {
     return path instanceof RegExp;
   }
 
-  private async getResponseAfterApplyingMiddlewares(
+  private async getOutgoingResponseAfterApplyingMiddlewares(
     req: Request,
     res: Response,
   ): Promise<Response> {
     let responseAfterMiddlewares: Response = res;
-    for (const middleware of this.middlewares) {
+    for (const middleware of this.outgoingMiddlewares) {
       responseAfterMiddlewares = await middleware(
         req,
         responseAfterMiddlewares,
       );
     }
     return responseAfterMiddlewares;
+  }
+
+  private async getIncomingRequestAfterApplyingMiddlewares(req: Request) {
+    let requestAfterMiddleWares: Request = req;
+    for (const middleware of this.incomingMiddlewares) {
+      requestAfterMiddleWares = await middleware(req);
+    }
+    return requestAfterMiddleWares;
   }
 
   private convertResponseToServerResponse(res: Response): ServerResponse {
@@ -423,8 +438,8 @@ export default class Aqua {
       );
 
       if (
-        Object.values(req.parameters).find((parameterValue) =>
-          parameterValue === ""
+        Object.values(req.parameters).find(
+          (parameterValue) => parameterValue === "",
         ) !== undefined
       ) {
         await this.respondWithNoRouteFound(req);
@@ -442,8 +457,9 @@ export default class Aqua {
         ) as RoutingSchemaKeys[]
       ) {
         for (
-          const validationFunction of route.options.schema[routingSchemaKey] ||
-            []
+          const validationFunction of route.options.schema[
+            routingSchemaKey
+          ] || []
         ) {
           const schemaContext = req[routingSchemaKey];
           if (!validationFunction.bind(schemaContext)(schemaContext)) {
@@ -476,7 +492,10 @@ export default class Aqua {
     }
 
     const responseAfterMiddlewares: Response = await this
-      .getResponseAfterApplyingMiddlewares(req, formattedResponse);
+      .getOutgoingResponseAfterApplyingMiddlewares(
+        req,
+        formattedResponse,
+      );
     const serverResponse: ServerResponse = this.convertResponseToServerResponse(
       responseAfterMiddlewares,
     );
@@ -494,7 +513,7 @@ export default class Aqua {
       }
 
       const statusCode =
-        !fallbackResponse.redirect && fallbackResponse.statusCode || 404;
+        (!fallbackResponse.redirect && fallbackResponse.statusCode) || 404;
 
       return {
         statusCode,
@@ -553,11 +572,11 @@ export default class Aqua {
       const { body, files } = rawRequest.contentLength
         ? await this.parseBody(rawRequest)
         : { body: {}, files: {} };
-      const req: Request = {
+      const formattedRequest: Request = {
         raw: rawRequest,
         url: rawRequest.url,
         headers: Object.fromEntries(rawRequest.headers),
-        method: (rawRequest.method.toUpperCase() as Method),
+        method: rawRequest.method.toUpperCase() as Method,
         query: rawRequest.url.includes("?") ? this.parseQuery(rawRequest) : {},
         body,
         files,
@@ -567,6 +586,10 @@ export default class Aqua {
         parameters: {},
         matches: [],
       };
+      const req = await this.getIncomingRequestAfterApplyingMiddlewares(
+        formattedRequest,
+      );
+
       const requestedPath = Router.parseRequestPath(req.url);
 
       if (this.options.log) {
@@ -586,7 +609,10 @@ export default class Aqua {
 
       if (!this.routes[req.method + requestedPath]) {
         const matchingRouteWithURLParameters = Router
-          .findRouteWithMatchingURLParameters(requestedPath, this.routes);
+          .findRouteWithMatchingURLParameters(
+            requestedPath,
+            this.routes,
+          );
 
         if (matchingRouteWithURLParameters) {
           this.respondToRequest(
@@ -640,8 +666,21 @@ export default class Aqua {
     return this;
   }
 
-  public register(middleware: Middleware): Aqua {
-    this.middlewares.push(middleware);
+  public register<
+    _,
+    Type extends MiddlewareType = MiddlewareType.Outgoing,
+  >(
+    middleware: Type extends undefined ? OutgoingMiddleware
+      : Type extends MiddlewareType.Incoming ? IncomingMiddleware
+      : OutgoingMiddleware,
+    type?: Type,
+  ): Aqua {
+    if (type === MiddlewareType.Incoming) {
+      this.incomingMiddlewares.push(middleware as IncomingMiddleware);
+      return this;
+    }
+
+    this.outgoingMiddlewares.push(middleware as OutgoingMiddleware);
     return this;
   }
 
@@ -665,7 +704,7 @@ export default class Aqua {
       path,
       usesURLParameters,
       urlParameterRegex: usesURLParameters
-        ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^\/]*)"))
+        ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^/]*)"))
         : undefined,
       responseHandler,
       options,
@@ -691,7 +730,29 @@ export default class Aqua {
     return this;
   }
 
-  public serve(folder: string, path: string, options: RoutingOptions = {}) {
+  public put(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): Aqua {
+    this.route(path, "PUT", responseHandler, options);
+    return this;
+  }
+
+  public delete(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): Aqua {
+    this.route(path, "DELETE", responseHandler, options);
+    return this;
+  }
+
+  public serve(
+    folder: string,
+    path: string,
+    options: RoutingOptions = {},
+  ): Aqua {
     if (!path.startsWith("/")) throw Error("Routes must start with a slash");
     this.staticRoutes.push({
       folder: folder.replace(/\/$/, "") + "/",
