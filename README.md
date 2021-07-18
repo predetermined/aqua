@@ -24,11 +24,13 @@ app.get("/", (req) => {
 
 ## Routing
 
-You can either use the short-form syntax for the `GET` and `POST` method
+You can either use the short-form syntax for the `GET`, `POST`, `PUT` and `DELETE` method
 
 ```typescript
 app.get("/", (req) => "Hello, World!");
 app.post("/", (req) => "Hello, World!");
+app.put("/", (req) => "Hello, World!");
+app.delete("/", (req) => "Hello, World!");
 ```
 
 or use the route function
@@ -80,18 +82,28 @@ function mustExist(key: string): RoutingSchemaValidationFunction {
 ## Middlewares
 
 You can register middlewares, that will be able to adjust the response object,
-the following way:
+the following way. Thereby you can decide whether you would like to modify the outgoing
+or incoming request.
 
 ```typescript
 app.register((req, res) => {
-  /**
-   * Skip Uint8Array responses:
-   * if (typeof res.content !== "string") return res;
-   * 
-   * res.content = res.content.replace("Hello", "Hi");
-   */
-  return res;
-});
+    /**
+     * Skip Uint8Array responses:
+     * if (typeof res.content !== "string") return res;
+     *
+     * res.content = res.content.replace("Hello", "Hi");
+     */
+    return res;
+}, MiddlewareType.Outgoing);
+```
+
+```typescript
+app.register((req) => {
+    /**
+     * req.query.hello = "world";
+     */
+    return req;
+}, MiddlewareType.Incoming);
 ```
 
 ## URL parameters

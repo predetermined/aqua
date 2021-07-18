@@ -1,4 +1,4 @@
-import Aqua, { mustExist, valueMustBeOfType } from "../aqua.ts";
+import Aqua, { MiddlewareType, mustExist, valueMustBeOfType } from "../aqua.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
@@ -33,7 +33,7 @@ registerTest("Is website up and is the content right?", async () => {
   }
 });
 
-registerTest("Middlewares working?", async () => {
+registerTest("Outgoing middlewares working?", async () => {
   app.get("/", (req) => "Hello, REPLACE_ME!");
   app.register((req, res) => {
     if (req.url === "/") {
@@ -52,7 +52,22 @@ registerTest("Middlewares working?", async () => {
 
   const content = await requestContent();
   if (content !== "Hello, Another Planet!") {
-    throw Error("Middlewares don't seem to work");
+    throw Error("Outgoing middlewares don't seem to work");
+  }
+});
+
+registerTest("Incoming middlewares working?", async () => {
+  app.get("/incoming-middlewares", (req) => req.query.test);
+  app.register((req) => {
+    if (req.url === "/incoming-middlewares") {
+      req.query = { test: "Wow, it works!" };
+    }
+    return req;
+  }, MiddlewareType.Incoming);
+
+  const content = await requestContent("/incoming-middlewares");
+  if (content !== "Wow, it works!") {
+    throw Error("Incoming middlewares don't seem to work");
   }
 });
 
