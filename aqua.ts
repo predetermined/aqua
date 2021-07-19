@@ -9,6 +9,7 @@ import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
 type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
+
 type Method =
   | "GET"
   | "HEAD"
@@ -19,11 +20,13 @@ type Method =
   | "OPTIONS"
   | "TRACE"
   | "PATCH";
+
 type OutgoingMiddleware = (
   req: Request,
   res: Response,
 ) => Response | Promise<Response>;
 type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
+
 type RawResponse = string | Uint8Array | Response;
 export type Response = ContentResponse | RedirectResponse;
 
@@ -33,16 +36,16 @@ interface ServerRequestWithRawRespond extends ServerRequest {
 
 interface ContentResponse {
   statusCode?: number;
-  headers?: { [name: string]: string };
-  cookies?: { [name: string]: string };
+  headers?: Record<string, string>;
+  cookies?: Record<string, string>;
   redirect?: string;
   content: string | Uint8Array;
 }
 
 interface RedirectResponse {
   statusCode?: number;
-  headers?: { [name: string]: string };
-  cookies?: { [name: string]: string };
+  headers?: Record<string, string>;
+  cookies?: Record<string, string>;
   redirect: string;
   content?: string | Uint8Array;
 }
@@ -51,12 +54,12 @@ export interface Request {
   raw: ServerRequest;
   url: string;
   method: Method;
-  headers: { [name: string]: string };
-  query: { [name: string]: string };
-  body: { [name: string]: string };
-  files: { [name: string]: File };
-  cookies: { [name: string]: string };
-  parameters: { [name: string]: string };
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  body: Record<string, string | number | boolean | null | object>;
+  files: Record<string, File>;
+  cookies: Record<string, string>;
+  parameters: Record<string, string>;
   matches: string[];
 }
 
@@ -96,11 +99,24 @@ export type RoutingSchemaValidationFunction = (
   context: RoutingSchemaValidationContext,
 ) => boolean;
 
-interface RoutingSchemaValidationContext {
-  [name: string]: any;
-}
+type BroadestSchemaValidationContextValueTypes =
+  | string
+  | number
+  | boolean
+  | null
+  | object;
 
-type RoutingSchemaKeys = "body" | "query" | "cookies" | "parameters";
+type RoutingSchemaValidationContext = Record<
+  string,
+  BroadestSchemaValidationContextValueTypes
+>;
+
+type RoutingSchemaKeys =
+  | "body"
+  | "query"
+  | "cookies"
+  | "parameters"
+  | "headers";
 
 type RoutingSchema = {
   [requestKey in RoutingSchemaKeys]?: RoutingSchemaValidationFunction[];
@@ -132,7 +148,7 @@ export function valueMustBeOfType(
 
 export function mustContainValue(
   key: string,
-  values: any[],
+  values: BroadestSchemaValidationContextValueTypes[],
 ): RoutingSchemaValidationFunction {
   return function () {
     return Object.keys(this).includes(key) && values.includes(this[key]);
@@ -666,10 +682,7 @@ export default class Aqua {
     return this;
   }
 
-  public register<
-    _,
-    Type extends MiddlewareType = MiddlewareType.Outgoing,
-  >(
+  public register<_, Type extends MiddlewareType = MiddlewareType.Outgoing>(
     middleware: Type extends undefined ? OutgoingMiddleware
       : Type extends MiddlewareType.Incoming ? IncomingMiddleware
       : OutgoingMiddleware,
@@ -736,6 +749,15 @@ export default class Aqua {
     options: RoutingOptions = {},
   ): Aqua {
     this.route(path, "PUT", responseHandler, options);
+    return this;
+  }
+
+  public patch(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): Aqua {
+    this.route(path, "PATCH", responseHandler, options);
     return this;
   }
 

@@ -1,4 +1,9 @@
-import Aqua, { MiddlewareType, mustExist, valueMustBeOfType } from "../aqua.ts";
+import Aqua, {
+  MiddlewareType,
+  mustContainValue,
+  mustExist,
+  valueMustBeOfType,
+} from "../aqua.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
@@ -124,7 +129,7 @@ registerTest("Regex route priorities working?", async () => {
 registerTest(
   "Body parsing working if Object converted to JSON string?",
   async () => {
-    app.post("/test-json-body-parsing", (req) => req.body.test);
+    app.post("/test-json-body-parsing", (req) => req.body.test as string);
 
     const content = await requestContent(`/test-json-body-parsing`, {
       method: "post",
@@ -139,7 +144,10 @@ registerTest(
 );
 
 registerTest("Body parsing working if passed form-urlencoded?", async () => {
-  app.post("/test-form-urlencoded-body-parsing", (req) => req.body.test);
+  app.post(
+    "/test-form-urlencoded-body-parsing",
+    (req) => req.body.test as string,
+  );
 
   const f = [
     encodeURIComponent("test") + "=" + encodeURIComponent("hello"),
@@ -158,7 +166,7 @@ registerTest("Body parsing working if passed form-urlencoded?", async () => {
 });
 
 registerTest("Body parsing working if passed FormData?", async () => {
-  app.post("/test-formdata-body-parsing", (req) => req.body.test);
+  app.post("/test-formdata-body-parsing", (req) => req.body.test as string);
 
   const f = new FormData();
   f.append("test", "hello");
@@ -239,6 +247,35 @@ registerTest(
     });
 
     const content = await requestContent("/test-parameter-schema-failing/test");
+    if (content === "Hello, World!") {
+      throw Error(
+        "Parameter schema validation functions passed although they shouldn't",
+      );
+    }
+  },
+);
+
+registerTest(
+  "Header schemas failing if validation functions should return false provided?",
+  async () => {
+    app.get(
+      "/test-parameter-schema-failing/headers",
+      (req) => "Hello, World!",
+      {
+        schema: {
+          headers: [
+            mustExist("hello"),
+            valueMustBeOfType("hello", "string"),
+            mustContainValue("hello", ["world"]),
+          ],
+        },
+      },
+    );
+
+    const content = await requestContent(
+      "/test-parameter-schema-failing/test",
+      { headers: new Headers({ hello: "world" }) },
+    );
     if (content === "Hello, World!") {
       throw Error(
         "Parameter schema validation functions passed although they shouldn't",
