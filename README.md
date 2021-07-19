@@ -24,12 +24,13 @@ app.get("/", (req) => {
 
 ## Routing
 
-You can either use the short-form syntax for the `GET`, `POST`, `PUT` and `DELETE` method
+You can either use the short-form syntax for the `GET`, `POST`, `PUT`, `PATCH` and `DELETE` method
 
 ```typescript
 app.get("/", (req) => "Hello, World!");
 app.post("/", (req) => "Hello, World!");
 app.put("/", (req) => "Hello, World!");
+app.patch("/", (req) => "Hello, World!");
 app.delete("/", (req) => "Hello, World!");
 ```
 
@@ -68,13 +69,13 @@ the `mustExist` function looks:
 
 ```typescript
 function mustExist(key: string): RoutingSchemaValidationFunction {
-  return function () {
+  return (context) => {
     /**
-     * `this` depends on the context, it could either be the
-     * query, parameters, cookies or body object.
+     * The `context` could either be a `cookies`,
+     * `parameters`, `headers`, `query` or `body` object.
      * Luckily, they all have the same type.
      */
-    return Object.keys(this).includes(key);
+    return Object.keys(context).includes(key);
   };
 }
 ```
