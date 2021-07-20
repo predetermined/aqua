@@ -8,7 +8,7 @@ Aqua is a minimal and fast web framework.
 - Middleware functions
 - Possibility for route changes while runtime
 - URL parameters
-- [Deno Deploy](#using-deno-deploy) support
+- [Deno Deploy support](#using-deno-deploy)
 
 ## Example usage
 
