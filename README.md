@@ -256,4 +256,4 @@ app.get("/", (req) => {
   return "Hello, World!";
 });
 ```
-Yes, that's it. Every else should work as you are used to. :)
+Yes, that's it. Everything else should work as you are used to. :)
