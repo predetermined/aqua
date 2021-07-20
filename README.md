@@ -8,6 +8,7 @@ Aqua is a minimal and fast web framework.
 - Middleware functions
 - Possibility for route changes while runtime
 - URL parameters
+- [Deno Deploy](#using-deno-deployhttpsdenocomdeploy)
 - [Blazing fast](#benchmarks)
 
 ## Example usage
@@ -255,3 +256,17 @@ app.post("/upload", async (req) => {
   return "Uploaded!";
 });
 ```
+
+### Using [Deno Deploy](https://deno.com/deploy)
+```typescript
+import Aqua from "https://deno.land/x/aqua/deploy.ts";
+//                                         ^^^^^^^^^
+
+const app = new Aqua();
+//                  ^^ (No port)
+
+app.get("/", (req) => {
+  return "Hello, World!";
+});
+```
+Yes, that's it. Every else should work as you are used to. :)
