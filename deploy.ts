@@ -29,7 +29,7 @@ export interface FetchEvent extends Event {
 
 export default class Aqua extends OriginalAqua {
   public _experimental = {
-    parseRequest: this.parseRequest,
+    parseRequest: this.parseRequest.bind(this),
   };
 
   constructor(options?: Options) {
