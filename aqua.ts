@@ -2,15 +2,21 @@ import {
   Response as ServerResponse,
   serve,
   Server,
-  ServerRequest,
+  ServerRequest as FullServerRequest,
   serveTLS,
-} from "https://deno.land/std@0.100.0/http/server.ts";
+} from "https://deno.land/std@0.102.0/http/server.ts";
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
 
+export type ServerRequest = Pick<
+  FullServerRequest,
+  "url" | "method" | "headers" | "body" | "respond" | "contentLength"
+>;
+export type { ServerResponse };
+
 type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
 
-type Method =
+export type Method =
   | "GET"
   | "HEAD"
   | "POST"
@@ -92,6 +98,9 @@ export interface Options {
     certFile: string;
     keyFile: string;
   };
+  _experimental?: {
+    skipServing?: boolean;
+  };
 }
 
 export type RoutingSchemaValidationFunction = (
@@ -168,21 +177,23 @@ export default class Aqua {
   private fallbackHandler: ResponseHandler | null = null;
 
   constructor(port: number, options?: Options) {
-    const onlyTLS = (options?.tls && !options.tls.independentPort) ||
-      options?.tls?.independentPort === port;
+    if (!options?._experimental?.skipServing) {
+      const onlyTLS = (options?.tls && !options.tls.independentPort) ||
+        options?.tls?.independentPort === port;
 
-    if (options?.tls) {
-      this.servers.push(
-        serveTLS({
-          hostname: options.tls.hostname || "localhost",
-          certFile: options.tls.certFile || "./localhost.crt",
-          keyFile: options.tls.keyFile || "./localhost.key",
-          port: options.tls.independentPort || port,
-        }),
-      );
+      if (options?.tls) {
+        this.servers.push(
+          serveTLS({
+            hostname: options.tls.hostname || "localhost",
+            certFile: options.tls.certFile || "./localhost.crt",
+            keyFile: options.tls.keyFile || "./localhost.key",
+            port: options.tls.independentPort || port,
+          }),
+        );
+      }
+
+      if (!onlyTLS) this.servers.push(serve({ port }));
     }
-
-    if (!onlyTLS) this.servers.push(serve({ port }));
 
     this.textDecoder = new TextDecoder();
     this.textEncoder = new TextEncoder();
@@ -205,15 +216,12 @@ export default class Aqua {
     }
   }
 
-  private async parseBody(
-    req: ServerRequest,
+  protected async parseBody(
+    buffer: Uint8Array,
   ): Promise<{
     body: { [name: string]: string };
     files: { [name: string]: File };
   }> {
-    if (!req.contentLength) return { body: {}, files: {} };
-
-    const buffer = await Deno.readAll(req.body);
     const rawBody: string = this.textDecoder.decode(buffer);
     let body: { [name: string]: any } = {};
 
@@ -307,16 +315,16 @@ export default class Aqua {
     return { body, files };
   }
 
-  private parseQuery(req: ServerRequest): { [name: string]: string } {
-    if (!req.url.includes("?")) return {};
+  protected parseQuery(url: string): Record<string, string> {
+    if (!url.includes("?")) return {};
 
     return Object.fromEntries(
-      new URLSearchParams(req.url.replace(/(.*)\?/, "")),
+      new URLSearchParams(url.replace(/(.*)\?/, "")),
     );
   }
 
-  private parseCookies(req: ServerRequest): { [name: string]: string } {
-    const rawCookieString: string | null = req.headers.get("cookie");
+  protected parseCookies(headers: Headers): Record<string, string> {
+    const rawCookieString: string | null = headers.get("cookie");
 
     if (!rawCookieString) return {};
 
@@ -549,9 +557,13 @@ export default class Aqua {
     req.raw.respond(serverResponse);
   }
 
-  private spinUpServers() {
+  protected spinUpServers() {
     for (const server of this.servers) {
-      this.handleRequests(server);
+      (async () => {
+        for await (const rawRequest of server) {
+          this.handleRequest(rawRequest);
+        }
+      })();
     }
   }
 
@@ -579,101 +591,106 @@ export default class Aqua {
     }
   }
 
-  private async handleRequests(server: Server) {
-    for await (const rawRequest of server) {
-      if (this.options.ignoreTrailingSlash) {
-        rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
-      }
+  protected async parseRequest(
+    rawRequest: ServerRequest | any,
+  ): Promise<Request> {
+    const { body, files } = rawRequest.contentLength
+      ? await this.parseBody(await Deno.readAll(rawRequest.body))
+      : { body: {}, files: {} };
 
-      const { body, files } = rawRequest.contentLength
-        ? await this.parseBody(rawRequest)
-        : { body: {}, files: {} };
-      const formattedRequest: Request = {
-        raw: rawRequest,
-        url: rawRequest.url,
-        headers: Object.fromEntries(rawRequest.headers),
-        method: rawRequest.method.toUpperCase() as Method,
-        query: rawRequest.url.includes("?") ? this.parseQuery(rawRequest) : {},
-        body,
-        files,
-        cookies: rawRequest.headers.get("cookies")
-          ? this.parseCookies(rawRequest)
-          : {},
-        parameters: {},
-        matches: [],
-      };
-      const req = await this.getIncomingRequestAfterApplyingMiddlewares(
-        formattedRequest,
+    return {
+      raw: rawRequest,
+      url: rawRequest.url,
+      headers: Object.fromEntries(rawRequest.headers),
+      method: rawRequest.method.toUpperCase() as Method,
+      query: rawRequest.url.includes("?")
+        ? this.parseQuery(rawRequest.url)
+        : {},
+      body,
+      files,
+      cookies: rawRequest.headers.get("cookies")
+        ? this.parseCookies(rawRequest.headers)
+        : {},
+      parameters: {},
+      matches: [],
+    };
+  }
+
+  protected async handleRequest(rawRequest: ServerRequest | any) {
+    if (this.options.ignoreTrailingSlash) {
+      rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
+    }
+
+    const req = await this.getIncomingRequestAfterApplyingMiddlewares(
+      await this.parseRequest(rawRequest),
+    );
+
+    const requestedPath = Router.parseRequestPath(req.url);
+
+    if (this.options.log) {
+      console.log(
+        `\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath}\x1b[0m`,
       );
-
-      const requestedPath = Router.parseRequestPath(req.url);
-
-      if (this.options.log) {
+      (req.raw as ServerRequestWithRawRespond).rawRespond = req.raw.respond;
+      req.raw.respond = async (res: ServerResponse) => {
         console.log(
-          `\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath}\x1b[0m`,
+          `\x1b[33m${req.method} \x1b[0m(\x1b[36mResponded\x1b[0m) \x1b[0m${requestedPath} -> \x1b[36m${res
+            .status || 200}\x1b[0m`,
         );
-        (req.raw as ServerRequestWithRawRespond).rawRespond =
-          rawRequest.respond;
-        req.raw.respond = async (res: ServerResponse) => {
-          console.log(
-            `\x1b[33m${req.method} \x1b[0m(\x1b[36mResponded\x1b[0m) \x1b[0m${requestedPath} -> \x1b[36m${res
-              .status || 200}\x1b[0m`,
-          );
-          await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
-        };
-      }
+        await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
+      };
+    }
 
-      if (!this.routes[req.method + requestedPath]) {
-        const matchingRouteWithURLParameters = Router
-          .findRouteWithMatchingURLParameters(
-            requestedPath,
-            this.routes,
-          );
-
-        if (matchingRouteWithURLParameters) {
-          this.respondToRequest(
-            req,
-            requestedPath,
-            matchingRouteWithURLParameters,
-            { usesURLParameters: true },
-          );
-          continue;
-        }
-
-        const matchingRegexRoute = Router.findMatchingRegexRoute(
+    if (!this.routes[req.method + requestedPath]) {
+      const matchingRouteWithURLParameters = Router
+        .findRouteWithMatchingURLParameters(
           requestedPath,
-          this.regexRoutes,
+          this.routes,
         );
 
-        if (matchingRegexRoute) {
-          this.respondToRequest(
-            req,
-            requestedPath,
-            matchingRegexRoute as RegexRoute,
-          );
-          continue;
-        }
-
-        if (req.method === "GET") {
-          const matchingStaticRoute = Router.findMatchingStaticRoute(
-            requestedPath,
-            this.staticRoutes,
-          );
-
-          if (matchingStaticRoute) {
-            this.respondToRequest(req, requestedPath, matchingStaticRoute);
-            continue;
-          }
-        }
-
-        this.respondWithNoRouteFound(req);
-      } else {
+      if (matchingRouteWithURLParameters) {
         this.respondToRequest(
           req,
           requestedPath,
-          this.routes[req.method + requestedPath],
+          matchingRouteWithURLParameters,
+          { usesURLParameters: true },
         );
+        return;
       }
+
+      const matchingRegexRoute = Router.findMatchingRegexRoute(
+        requestedPath,
+        this.regexRoutes,
+      );
+
+      if (matchingRegexRoute) {
+        this.respondToRequest(
+          req,
+          requestedPath,
+          matchingRegexRoute as RegexRoute,
+        );
+        return;
+      }
+
+      if (req.method === "GET") {
+        const matchingStaticRoute = Router.findMatchingStaticRoute(
+          requestedPath,
+          this.staticRoutes,
+        );
+
+        if (matchingStaticRoute) {
+          this.respondToRequest(req, requestedPath, matchingStaticRoute);
+          return;
+        }
+      }
+
+      this.respondWithNoRouteFound(req);
+    } else {
+      this.respondToRequest(
+        req,
+        requestedPath,
+        this.routes[req.method + requestedPath],
+      );
     }
   }
 
