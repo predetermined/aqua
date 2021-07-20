@@ -12,7 +12,7 @@ declare var addEventListener: (
   eventName: string,
   handler: (event: FetchEvent) => void,
 ) => void;
-1
+
 declare var Response: {
   new (
     body: string | Uint8Array | any,
