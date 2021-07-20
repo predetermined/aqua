@@ -8,8 +8,7 @@ Aqua is a minimal and fast web framework.
 - Middleware functions
 - Possibility for route changes while runtime
 - URL parameters
-- [Deno Deploy](#using-deno-deploy)
-- [Blazing fast](#benchmarks)
+- [Deno Deploy](#using-deno-deploy) support
 
 ## Example usage
 
@@ -143,18 +142,6 @@ app.get("/", (req) => {
 
 Cookies and headers are just getting appended, so no information is getting lost
 by providing custom ones. However, you can still overwrite existing headers.
-
-## Benchmarks
-
-| Framework | Version   | Avg RPS   | Router? |
-| --------- | --------- | --------- | ------- |
-| Deno HTTP | 0.75.0    | 19138     | No      |
-| **Aqua**  | **1.0.8** | **17726** | **Yes** |
-| Drash     | 1.2.5     | 16022     | Yes     |
-| Fen       | 0.8.0     | 7071      | Yes     |
-| Abc       | 1.2.0     | 4676      | Yes     |
-
-Last updated: 2020-11-01
 
 ## More examples
 
