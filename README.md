@@ -71,9 +71,8 @@ the `mustExist` function looks:
 function mustExist(key: string): RoutingSchemaValidationFunction {
   return (context) => {
     /**
-     * The `context` could either be a `cookies`,
+     * `context` could either be a `cookies`,
      * `parameters`, `headers`, `query` or `body` object.
-     * Luckily, they all have the same type.
      */
     return Object.keys(context).includes(key);
   };
