@@ -1,12 +1,11 @@
-import { Buffer } from "https://deno.land/std@0.102.0/io/buffer.ts";
 import OriginalAqua, {
   Method,
   Options as OriginalOptions,
   Request as AquaRequest,
-  Response,
-  ServerRequest,
-  ServerResponse,
 } from "./aqua.ts";
+import { Buffer, ServerRequest, ServerResponse } from "./shared.ts";
+
+export * from "./aqua.ts";
 
 declare var addEventListener: (
   eventName: string,
