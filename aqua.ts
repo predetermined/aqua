@@ -1,18 +1,12 @@
 import {
-  Response as ServerResponse,
   serve,
   Server,
-  ServerRequest as FullServerRequest,
+  ServerRequest,
+  ServerResponse,
   serveTLS,
-} from "https://deno.land/std@0.102.0/http/server.ts";
+} from "./shared.ts";
 import Router from "./router.ts";
 import ContentHandler from "./content_handler.ts";
-
-export type ServerRequest = Pick<
-  FullServerRequest,
-  "url" | "method" | "headers" | "body" | "respond" | "contentLength"
->;
-export type { ServerResponse };
 
 type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
 
@@ -592,8 +586,10 @@ export default class Aqua {
   }
 
   protected async parseRequest(
-    rawRequest: ServerRequest | any,
+    // So the method signature can be overridden
+    _rawRequest: unknown,
   ): Promise<Request> {
+    const rawRequest = _rawRequest as ServerRequest;
     const { body, files } = rawRequest.contentLength
       ? await this.parseBody(await Deno.readAll(rawRequest.body))
       : { body: {}, files: {} };
