@@ -312,9 +312,7 @@ export default class Aqua {
   protected parseQuery(url: string): Record<string, string> {
     if (!url.includes("?")) return {};
 
-    return Object.fromEntries(
-      new URLSearchParams(url.replace(/(.*)\?/, "")),
-    );
+    return Object.fromEntries(new URLSearchParams(url.replace(/(.*)\?/, "")));
   }
 
   protected parseCookies(headers: Headers): Record<string, string> {
@@ -393,6 +391,16 @@ export default class Aqua {
     return path instanceof RegExp;
   }
 
+  private getChangedObjectValueKeys(
+    object1: Record<string, any>,
+    object2: Record<string, any>,
+  ): string[] {
+    const allKeys = [
+      ...new Set([...Object.keys(object1), ...Object.keys(object2)]),
+    ];
+    return allKeys.filter((key) => object1[key] !== object2[key]);
+  }
+
   private async getOutgoingResponseAfterApplyingMiddlewares(
     req: Request,
     res: Response,
@@ -404,6 +412,18 @@ export default class Aqua {
         responseAfterMiddlewares,
       );
     }
+
+    if (this.options.log) {
+      console.log(
+        `\x1b[33m${req.method} \x1b[0m(\x1b[36mMiddleware\x1b[0m) \x1b[0mChanged response \`${
+          this.getChangedObjectValueKeys(
+            res,
+            responseAfterMiddlewares,
+          ).join("`, `")
+        }\`\x1b[0m`,
+      );
+    }
+
     return responseAfterMiddlewares;
   }
 
@@ -412,6 +432,18 @@ export default class Aqua {
     for (const middleware of this.incomingMiddlewares) {
       requestAfterMiddleWares = await middleware(req);
     }
+
+    if (this.options.log) {
+      console.log(
+        `\x1b[33m${req.method} \x1b[0m(\x1b[36mMiddleware\x1b[0m) \x1b[0mChanged request \`${
+          this.getChangedObjectValueKeys(
+            req,
+            requestAfterMiddleWares,
+          ).join("`, `")
+        }\`\x1b[0m`,
+      );
+    }
+
     return requestAfterMiddleWares;
   }
 
