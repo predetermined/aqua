@@ -94,7 +94,7 @@ registerTest("URL parameters should no match with different slash positioning?",
   app.get("/api3/:action/:value/more", (req) => "matched");
 
   const content = await requestContent(`/api3/hello/test`);
-  if (content === "matched") throw Error("URL parameters method matching doesn't seem to work");
+  if (content === "matched") throw Error("URL parameters slash positioning caused an error");
 });
 
 registerTest("URL query decoding working?", async () => {
