@@ -83,6 +83,20 @@ registerTest("URL parameters working?", async () => {
   if (content !== "hello") throw Error("URL parameters don't seem to work");
 });
 
+registerTest("URL parameters method matching working working?", async () => {
+  app.post("/api2/:action", (req) => "post");
+
+  const content = await requestContent(`/api2/hello`);
+  if (content === "post") throw Error("URL parameters method matching doesn't seem to work");
+});
+
+registerTest("URL parameters should no match with different slash positioning?", async () => {
+  app.get("/api3/:action/:value/more", (req) => "matched");
+
+  const content = await requestContent(`/api3/hello/test`);
+  if (content === "matched") throw Error("URL parameters method matching doesn't seem to work");
+});
+
 registerTest("URL query decoding working?", async () => {
   app.get("/search", (req) => JSON.stringify(req.query));
 
