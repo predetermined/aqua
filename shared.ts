@@ -4,7 +4,7 @@ import {
   Server,
   ServerRequest as FullServerRequest,
   serveTLS,
-} from "https://deno.land/std@0.103.0/http/server.ts";
+} from "https://deno.land/std@0.105.0/http/server.ts";
 
 export type ServerRequest = Pick<
   FullServerRequest,
@@ -12,5 +12,5 @@ export type ServerRequest = Pick<
 >;
 export type { ServerResponse };
 
-export { Buffer } from "https://deno.land/std@0.103.0/io/buffer.ts";
+export { Buffer } from "https://deno.land/std@0.105.0/io/buffer.ts";
 export { serve, Server, serveTLS };
