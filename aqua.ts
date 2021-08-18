@@ -72,10 +72,12 @@ export interface StringRoute extends RouteTemplate {
   path: string;
   usesURLParameters: boolean;
   urlParameterRegex?: RegExp;
+  method: Method;
 }
 
 export interface RegexRoute extends RouteTemplate {
   path: RegExp;
+  method: Method;
 }
 
 export interface StaticRoute extends RouteTemplate {
@@ -642,6 +644,7 @@ export default class Aqua {
         .findRouteWithMatchingURLParameters(
           requestedPath,
           this.routes,
+          req.method,
         );
 
       if (matchingRouteWithURLParameters) {
@@ -657,6 +660,7 @@ export default class Aqua {
       const matchingRegexRoute = Router.findMatchingRegexRoute(
         requestedPath,
         this.regexRoutes,
+        req.method,
       );
 
       if (matchingRegexRoute) {
@@ -717,7 +721,7 @@ export default class Aqua {
     options: RoutingOptions = {},
   ): Aqua {
     if (path instanceof RegExp) {
-      this.regexRoutes.push({ path, responseHandler });
+      this.regexRoutes.push({ path, responseHandler, method });
       return this;
     }
 
@@ -734,6 +738,7 @@ export default class Aqua {
         : undefined,
       responseHandler,
       options,
+      method,
     } as StringRoute;
     return this;
   }

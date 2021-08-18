@@ -1,4 +1,4 @@
-import type { RegexRoute, StaticRoute, StringRoute } from "./aqua.ts";
+import type { Method, RegexRoute, StaticRoute, StringRoute } from "./aqua.ts";
 
 export default class Router {
   public static parseRequestPath(url: string) {
@@ -8,14 +8,16 @@ export default class Router {
   public static findRouteWithMatchingURLParameters(
     requestedPath: string,
     routes: { [path: string]: StringRoute },
+    method: Method,
   ) {
     return routes[
       Object.keys(routes).find((path: string) => {
         if (!path.includes(":")) return false;
         const route: StringRoute = routes[path];
 
-        return requestedPath.replace(route.urlParameterRegex as RegExp, "")
-          .length === 0;
+        return route.method === method &&
+          requestedPath.replace(route.urlParameterRegex as RegExp, "")
+              .length === 0;
       }) || ""
     ];
   }
@@ -23,9 +25,11 @@ export default class Router {
   public static findMatchingRegexRoute(
     requestedPath: string,
     regexRoutes: RegexRoute[],
+    method: Method,
   ) {
     return regexRoutes.find((regexRoute: RegexRoute) => {
-      return requestedPath.replace(regexRoute.path, "").length === 0;
+      return regexRoute.method === method &&
+        requestedPath.replace(regexRoute.path, "").length === 0;
     });
   }
 
