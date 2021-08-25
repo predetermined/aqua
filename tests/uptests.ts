@@ -1,4 +1,7 @@
+import NativeAqua from "../implementations/native.ts";
+import StdHttpAqua from "../implementations/std_http.ts";
 import Aqua, {
+  HAS_NATIVE_HTTP_SUPPORT,
   MiddlewareType,
   mustContainValue,
   mustExist,
@@ -8,6 +11,11 @@ import Aqua, {
 const app = new Aqua(4000);
 let registeredTests = 0;
 let solvedTests = 0;
+
+console.log("Environment:", {
+  version: Deno.version.deno,
+  hasNativeSupport: HAS_NATIVE_HTTP_SUPPORT,
+});
 
 async function requestContent(suffix: string = "", options: any = {}) {
   return await (await fetch(`http://localhost:4000${suffix}`, options)).text();
@@ -87,15 +95,24 @@ registerTest("URL parameters method matching working working?", async () => {
   app.post("/api2/:action", (req) => "post");
 
   const content = await requestContent(`/api2/hello`);
-  if (content === "post") throw Error("URL parameters method matching doesn't seem to work");
+  if (content === "post") {
+    throw Error("URL parameters method matching doesn't seem to work");
+  }
 });
 
-registerTest("URL parameters should no match with different slash positioning?", async () => {
-  app.get("/api3/:action/:value/more", (req) => "matched");
+registerTest(
+  "URL parameters should no match with different slash positioning?",
+  async () => {
+    app.get("/api3/:action/:value/more", (req) => "matched");
 
-  const content = await requestContent(`/api3/hello/test`);
-  if (content === "matched") throw Error("URL parameters slash positioning caused an error");
-});
+    const content = await requestContent(`/api3/hello/test`);
+    if (content === "matched") {
+      throw Error(
+        "URL parameters slash positioning caused an error",
+      );
+    }
+  },
+);
 
 registerTest("URL query decoding working?", async () => {
   app.get("/search", (req) => JSON.stringify(req.query));
@@ -484,6 +501,18 @@ registerTest("Headers received correct?", async () => {
   });
   if (receivedHeaders !== JSON.stringify(testHeaders)) {
     throw new Error("Headers not received properly");
+  }
+});
+
+registerTest("Should use NativeAqua if Deno version >= 1.13", () => {
+  if (HAS_NATIVE_HTTP_SUPPORT && !(app instanceof NativeAqua)) {
+    throw new Error("Is not using NativeAqua");
+  }
+});
+
+registerTest("Should use StdHttpAqua if Deno version < 1.13", () => {
+  if (!HAS_NATIVE_HTTP_SUPPORT && !(app instanceof StdHttpAqua)) {
+    throw new Error("Is not using StdHttpAqua");
   }
 });
 

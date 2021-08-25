@@ -4,10 +4,10 @@ import StdHttpAqua from "./implementations/std_http.ts";
 
 export * from "./aqua.ts";
 
-const ENABLE_NATIVE_SERVING = parseFloat(Deno.version.deno) >= 1.14;
+export const HAS_NATIVE_HTTP_SUPPORT = parseFloat(Deno.version.deno) >= 1.13;
 
 function Aqua(port: number, options?: Options) {
-  if (ENABLE_NATIVE_SERVING) {
+  if (HAS_NATIVE_HTTP_SUPPORT) {
     return new NativeAqua(port, options);
   }
 
