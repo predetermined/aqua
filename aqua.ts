@@ -69,12 +69,14 @@ interface RouteTemplate {
 
 export interface StringRoute extends RouteTemplate {
   path: string;
+  method: Method;
   usesURLParameters: boolean;
   urlParameterRegex?: RegExp;
 }
 
 export interface RegexRoute extends RouteTemplate {
   path: RegExp;
+  method: Method;
 }
 
 export interface StaticRoute extends RouteTemplate {
@@ -151,7 +153,7 @@ export function mustContainValue(
 
 export default abstract class Aqua {
   protected readonly options: Options = {};
-  private routes: { [path: string]: StringRoute } = {};
+  private routes: Record<string, StringRoute> = {};
   private regexRoutes: RegexRoute[] = [];
   private staticRoutes: StaticRoute[] = [];
   private incomingMiddlewares: IncomingMiddleware[] = [];
@@ -412,6 +414,7 @@ export default abstract class Aqua {
     const matchingRouteWithURLParameters = findRouteWithMatchingURLParameters(
       requestedPath,
       this.routes,
+      req.method,
     );
 
     if (matchingRouteWithURLParameters) {
@@ -427,6 +430,7 @@ export default abstract class Aqua {
     const matchingRegexRoute = findMatchingRegexRoute(
       requestedPath,
       this.regexRoutes,
+      req.method,
     );
 
     if (matchingRegexRoute) {
@@ -476,7 +480,7 @@ export default abstract class Aqua {
     options: RoutingOptions = {},
   ): Aqua {
     if (path instanceof RegExp) {
-      this.regexRoutes.push({ path, responseHandler });
+      this.regexRoutes.push({ path, responseHandler, method });
       return this;
     }
 
@@ -493,7 +497,8 @@ export default abstract class Aqua {
         : undefined,
       responseHandler,
       options,
-    } as StringRoute;
+      method,
+    };
     return this;
   }
 
