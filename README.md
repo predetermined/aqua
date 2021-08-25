@@ -4,10 +4,10 @@ Aqua is a minimal and fast web framework.
 
 ## Features
 
-- Immediate parsing of the request body, query and the cookie string
+- Built-in cookies, headers, files, query, and body parsing
 - Middleware functions
-- Possibility for route changes while runtime
 - URL parameters
+- Usage of the native HTTP server API
 - [Deno Deploy support](#using-deno-deploy)
 
 ## Example usage
