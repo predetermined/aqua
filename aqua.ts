@@ -1,14 +1,11 @@
+import { Json } from "./shared.ts";
 import {
-  serve,
-  Server,
-  ServerRequest,
-  ServerResponse,
-  serveTLS,
-} from "./shared.ts";
-import Router from "./router.ts";
-import ContentHandler from "./content_handler.ts";
-
-type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
+  findMatchingRegexRoute,
+  findMatchingStaticRoute,
+  findRouteWithMatchingURLParameters,
+  parseRequestPath,
+} from "./helpers/routing.ts";
+import { getContentType } from "./helpers/content_identification.ts";
 
 export type Method =
   | "GET"
@@ -30,10 +27,6 @@ type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
 type RawResponse = string | Uint8Array | Response;
 export type Response = ContentResponse | RedirectResponse;
 
-interface ServerRequestWithRawRespond extends ServerRequest {
-  rawRespond: (res: ServerResponse) => Promise<void>;
-}
-
 interface ContentResponse {
   statusCode?: number;
   headers?: Record<string, string>;
@@ -51,17 +44,23 @@ interface RedirectResponse {
 }
 
 export interface Request {
-  raw: ServerRequest;
+  _internal: {
+    respond(res: Response): void;
+    raw: unknown;
+  };
   url: string;
   method: Method;
   headers: Record<string, string>;
   query: Record<string, string>;
-  body: Record<string, string | number | boolean | null | object>;
+  body: Record<string, Json>;
   files: Record<string, File>;
   cookies: Record<string, string>;
   parameters: Record<string, string>;
   matches: string[];
+  conn?: Deno.Conn;
 }
+
+type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
 
 interface RouteTemplate {
   options?: RoutingOptions;
@@ -92,9 +91,6 @@ export interface Options {
     certFile: string;
     keyFile: string;
   };
-  _experimental?: {
-    skipServing?: boolean;
-  };
 }
 
 export type RoutingSchemaValidationFunction = (
@@ -102,12 +98,7 @@ export type RoutingSchemaValidationFunction = (
   context: RoutingSchemaValidationContext,
 ) => boolean;
 
-type BroadestSchemaValidationContextValueTypes =
-  | string
-  | number
-  | boolean
-  | null
-  | object;
+type BroadestSchemaValidationContextValueTypes = Json;
 
 type RoutingSchemaValidationContext = Record<
   string,
@@ -158,179 +149,28 @@ export function mustContainValue(
   };
 }
 
-export default class Aqua {
-  private readonly textDecoder: TextDecoder;
-  private readonly textEncoder: TextEncoder;
-  private readonly servers: Server[] = [];
+export default abstract class Aqua {
+  protected readonly options: Options = {};
   private routes: { [path: string]: StringRoute } = {};
   private regexRoutes: RegexRoute[] = [];
   private staticRoutes: StaticRoute[] = [];
-  private options: Options = {};
   private incomingMiddlewares: IncomingMiddleware[] = [];
   private outgoingMiddlewares: OutgoingMiddleware[] = [];
   private fallbackHandler: ResponseHandler | null = null;
 
   constructor(port: number, options?: Options) {
-    if (!options?._experimental?.skipServing) {
-      const onlyTLS = (options?.tls && !options.tls.independentPort) ||
-        options?.tls?.independentPort === port;
-
-      if (options?.tls) {
-        this.servers.push(
-          serveTLS({
-            hostname: options.tls.hostname || "localhost",
-            certFile: options.tls.certFile || "./localhost.crt",
-            keyFile: options.tls.keyFile || "./localhost.key",
-            port: options.tls.independentPort || port,
-          }),
-        );
-      }
-
-      if (!onlyTLS) this.servers.push(serve({ port }));
-    }
-
-    this.textDecoder = new TextDecoder();
-    this.textEncoder = new TextEncoder();
     this.options = options || {};
-    this.spinUpServers();
+    this.listen(port, {
+      onlyTls: (options?.tls && !options.tls.independentPort) ||
+        options?.tls?.independentPort === port,
+    });
+
     if (this.options.log) {
       console.log(`Server started (http://localhost:${port})`);
     }
   }
 
-  public async render(filePath: string): Promise<string> {
-    try {
-      return this.textDecoder.decode(await Deno.readFile(filePath));
-    } catch (error) {
-      if (error instanceof Deno.errors.PermissionDenied) {
-        return "Please run your application with the '--allow-read' flag.";
-      }
-
-      return "Could not render file.";
-    }
-  }
-
-  protected async parseBody(
-    buffer: Uint8Array,
-  ): Promise<{
-    body: { [name: string]: string };
-    files: { [name: string]: File };
-  }> {
-    const rawBody: string = this.textDecoder.decode(buffer);
-    let body: { [name: string]: any } = {};
-
-    if (!rawBody) return { body: {}, files: {} };
-
-    const files: { [name: string]: File } = (
-      rawBody.match(
-        /---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?(?=((\n|\r)--|$))/g,
-      ) || []
-    ).reduce((files: { [name: string]: File }, fileString: string, i) => {
-      const fileName = /filename="(.*?)"/.exec(fileString)?.[1];
-      const fileType = /Content-Type: (.*)/.exec(fileString)?.[1]?.trim();
-      const name = /name="(.*?)"/.exec(fileString)?.[1];
-
-      if (!fileName || !name) return files;
-
-      const uniqueString = fileString.match(
-        /---(\n|\r|.)*?Content-Type.*(\n|\r)+(\n|\r|.)*?/g,
-      )?.[0];
-
-      if (!uniqueString) return files;
-
-      const uniqueStringEncoded = this.textEncoder.encode(uniqueString);
-      const endSequence = this.textEncoder.encode("----");
-
-      let start = -1;
-      let end = buffer.length;
-      for (let i = 0; i < buffer.length; i++) {
-        if (start === -1) {
-          let matchedUniqueString = true;
-          let uniqueStringEncodedIndex = 0;
-          for (let j = i; j < i + uniqueStringEncoded.length; j++) {
-            if (buffer[j] !== uniqueStringEncoded[uniqueStringEncodedIndex]) {
-              matchedUniqueString = false;
-              break;
-            }
-            uniqueStringEncodedIndex++;
-          }
-
-          if (matchedUniqueString) {
-            i = start = i + uniqueStringEncoded.length;
-          }
-          continue;
-        }
-
-        let matchedEndSequence = true;
-        let endSequenceIndex = 0;
-        for (let j = i; j < i + endSequence.length; j++) {
-          if (buffer[j] !== endSequence[endSequenceIndex]) {
-            matchedEndSequence = false;
-            break;
-          }
-          endSequenceIndex++;
-        }
-
-        if (matchedEndSequence) {
-          end = i;
-          break;
-        }
-      }
-
-      if (start === -1) return files;
-
-      const fileBuffer = buffer.subarray(start, end);
-      const file = new File([fileBuffer], fileName, { type: fileType });
-
-      return { [name]: file, ...files };
-    }, {});
-
-    try {
-      body = JSON.parse(rawBody);
-    } catch (error) {
-      if (rawBody.includes(`name="`)) {
-        body = (
-          rawBody.match(/name="(.*?)"(\s|\n|\r)*(.*)(\s|\n|\r)*---/gm) || []
-        ).reduce((fields: {}, field: string): { [name: string]: string } => {
-          if (!/name="(.*?)"/.exec(field)?.[1]) return fields;
-
-          return {
-            ...fields,
-            [/name="(.*?)"/.exec(field)?.[1] || ""]: field.match(
-              /(.*?)(?=(\s|\n|\r)*---)/,
-            )?.[0],
-          };
-        }, {});
-      } else {
-        body = Object.fromEntries(new URLSearchParams(rawBody));
-      }
-    }
-
-    return { body, files };
-  }
-
-  protected parseQuery(url: string): Record<string, string> {
-    if (!url.includes("?")) return {};
-
-    return Object.fromEntries(
-      new URLSearchParams(url.replace(/(.*)\?/, "")),
-    );
-  }
-
-  protected parseCookies(headers: Headers): Record<string, string> {
-    const rawCookieString: string | null = headers.get("cookie");
-
-    if (!rawCookieString) return {};
-
-    return rawCookieString.split(";").reduce((cookies: {}, cookie: string): {
-      [name: string]: string;
-    } => {
-      return {
-        ...cookies,
-        [cookie.split("=")[0].trimLeft()]: cookie.split("=")[1],
-      };
-    }, {});
-  }
+  abstract listen(port: number, { onlyTls }: { onlyTls: boolean }): void;
 
   private connectURLParameters(
     route: StringRoute,
@@ -415,31 +255,6 @@ export default class Aqua {
     return requestAfterMiddleWares;
   }
 
-  private convertResponseToServerResponse(res: Response): ServerResponse {
-    const headers: Headers = new Headers(res.headers || {});
-    let statusCode: number | undefined = res.statusCode;
-
-    if (res.cookies) {
-      for (const cookieName of Object.keys(res.cookies)) {
-        headers.append(
-          "Set-Cookie",
-          `${cookieName}=${res.cookies[cookieName]}`,
-        );
-      }
-    }
-
-    if (res.redirect) {
-      headers.append("Location", res.redirect);
-      statusCode ||= 301;
-    }
-
-    return {
-      headers,
-      body: res.content,
-      status: statusCode || 200,
-    };
-  }
-
   private async respondToRequest(
     req: Request,
     requestedPath: string,
@@ -505,7 +320,7 @@ export default class Aqua {
     );
 
     if (!formattedResponse) {
-      req.raw.respond({ body: "No response content provided." });
+      req._internal.respond({ content: "No response content provided." });
       return;
     }
 
@@ -514,10 +329,8 @@ export default class Aqua {
         req,
         formattedResponse,
       );
-    const serverResponse: ServerResponse = this.convertResponseToServerResponse(
-      responseAfterMiddlewares,
-    );
-    req.raw.respond(serverResponse);
+
+    req._internal.respond(responseAfterMiddlewares);
   }
 
   private async getFallbackHandlerResponse(req: Request): Promise<Response> {
@@ -545,34 +358,21 @@ export default class Aqua {
   }
 
   private async respondWithNoRouteFound(req: Request): Promise<void> {
-    const serverResponse = this.convertResponseToServerResponse(
-      await this.getFallbackHandlerResponse(req),
-    );
-    req.raw.respond(serverResponse);
-  }
-
-  protected spinUpServers() {
-    for (const server of this.servers) {
-      (async () => {
-        for await (const rawRequest of server) {
-          this.handleRequest(rawRequest);
-        }
-      })();
-    }
+    req._internal.respond(await this.getFallbackHandlerResponse(req));
   }
 
   private async handleStaticRequest(
     req: Request,
     { path, folder }: { path: string; folder: string },
   ): Promise<Response> {
-    const requestedPath = Router.parseRequestPath(req.url);
+    const requestedPath = parseRequestPath(req.url);
     const resourcePath: string = requestedPath.replace(path, "");
     const extension: string = resourcePath.replace(
       /.*(?=\.[a-zA-Z0-9_]*$)/,
       "",
     );
     const contentType: string | null = extension
-      ? ContentHandler.getContentType(extension)
+      ? getContentType(extension)
       : null;
 
     try {
@@ -585,109 +385,68 @@ export default class Aqua {
     }
   }
 
-  protected async parseRequest(
-    // So the method signature can be overridden
-    _rawRequest: unknown,
-  ): Promise<Request> {
-    const rawRequest = _rawRequest as ServerRequest;
-    const { body, files } = rawRequest.contentLength
-      ? await this.parseBody(await Deno.readAll(rawRequest.body))
-      : { body: {}, files: {} };
-
-    return {
-      raw: rawRequest,
-      url: rawRequest.url,
-      headers: Object.fromEntries(rawRequest.headers),
-      method: rawRequest.method.toUpperCase() as Method,
-      query: rawRequest.url.includes("?")
-        ? this.parseQuery(rawRequest.url)
-        : {},
-      body,
-      files,
-      cookies: rawRequest.headers.get("cookies")
-        ? this.parseCookies(rawRequest.headers)
-        : {},
-      parameters: {},
-      matches: [],
-    };
-  }
-
-  protected async handleRequest(rawRequest: ServerRequest | any) {
+  protected async handleRequest(req: Request) {
     if (this.options.ignoreTrailingSlash) {
-      rawRequest.url = rawRequest.url.replace(/\/$/, "") + "/";
+      req.url = req.url.replace(/\/$/, "") + "/";
     }
 
-    const req = await this.getIncomingRequestAfterApplyingMiddlewares(
-      await this.parseRequest(rawRequest),
-    );
+    req = await this.getIncomingRequestAfterApplyingMiddlewares(req);
 
-    const requestedPath = Router.parseRequestPath(req.url);
+    const requestedPath = parseRequestPath(req.url);
 
     if (this.options.log) {
       console.log(
         `\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath}\x1b[0m`,
       );
-      (req.raw as ServerRequestWithRawRespond).rawRespond = req.raw.respond;
-      req.raw.respond = async (res: ServerResponse) => {
-        console.log(
-          `\x1b[33m${req.method} \x1b[0m(\x1b[36mResponded\x1b[0m) \x1b[0m${requestedPath} -> \x1b[36m${res
-            .status || 200}\x1b[0m`,
-        );
-        await (req.raw as ServerRequestWithRawRespond).rawRespond(res);
-      };
     }
 
-    if (!this.routes[req.method + requestedPath]) {
-      const matchingRouteWithURLParameters = Router
-        .findRouteWithMatchingURLParameters(
-          requestedPath,
-          this.routes,
-        );
-
-      if (matchingRouteWithURLParameters) {
-        this.respondToRequest(
-          req,
-          requestedPath,
-          matchingRouteWithURLParameters,
-          { usesURLParameters: true },
-        );
-        return;
-      }
-
-      const matchingRegexRoute = Router.findMatchingRegexRoute(
-        requestedPath,
-        this.regexRoutes,
-      );
-
-      if (matchingRegexRoute) {
-        this.respondToRequest(
-          req,
-          requestedPath,
-          matchingRegexRoute as RegexRoute,
-        );
-        return;
-      }
-
-      if (req.method === "GET") {
-        const matchingStaticRoute = Router.findMatchingStaticRoute(
-          requestedPath,
-          this.staticRoutes,
-        );
-
-        if (matchingStaticRoute) {
-          this.respondToRequest(req, requestedPath, matchingStaticRoute);
-          return;
-        }
-      }
-
-      this.respondWithNoRouteFound(req);
-    } else {
+    if (this.routes[req.method + requestedPath]) {
       this.respondToRequest(
         req,
         requestedPath,
         this.routes[req.method + requestedPath],
       );
+      return;
     }
+
+    const matchingRouteWithURLParameters = findRouteWithMatchingURLParameters(
+      requestedPath,
+      this.routes,
+    );
+
+    if (matchingRouteWithURLParameters) {
+      this.respondToRequest(
+        req,
+        requestedPath,
+        matchingRouteWithURLParameters,
+        { usesURLParameters: true },
+      );
+      return;
+    }
+
+    const matchingRegexRoute = findMatchingRegexRoute(
+      requestedPath,
+      this.regexRoutes,
+    );
+
+    if (matchingRegexRoute) {
+      this.respondToRequest(req, requestedPath, matchingRegexRoute);
+      return;
+    }
+
+    if (req.method === "GET") {
+      const matchingStaticRoute = findMatchingStaticRoute(
+        requestedPath,
+        this.staticRoutes,
+      );
+
+      if (matchingStaticRoute) {
+        this.respondToRequest(req, requestedPath, matchingStaticRoute);
+        return;
+      }
+    }
+
+    this.respondWithNoRouteFound(req);
   }
 
   public provideFallback(responseHandler: ResponseHandler): Aqua {
