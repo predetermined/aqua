@@ -27,7 +27,7 @@ export default class Aqua extends OriginalAqua {
     super(-1, { ...options });
   }
 
-  listen(port: number) {
+  protected listen(port: number) {
     addEventListener("fetch", async (event) => {
       const req = await getAquaRequestFromNativeRequest(event);
       this.handleRequest(req);

@@ -4,14 +4,14 @@ Aqua is a minimal and fast web framework.
 
 ## Features
 
-- Built-in cookies, headers, files, query, and body parsing
+- Built-in cookie, header, file, query, and body parsing
 - Middleware functions
 - URL parameters
 - Usage of the native HTTP server API
 - [Deno Deploy support](#using-deno-deploy)
 
 ## Example usage
-
+Please make sure to have **at least Deno version 1.13** installed.
 ```typescript
 import Aqua from "https://deno.land/x/aqua/mod.ts";
 
