@@ -3,7 +3,7 @@ import Aqua, {
   mustContainValue,
   mustExist,
   valueMustBeOfType,
-} from "../aqua.ts";
+} from "../mod.ts";
 
 const app = new Aqua(4000);
 let registeredTests = 0;
@@ -83,19 +83,54 @@ registerTest("URL parameters working?", async () => {
   if (content !== "hello") throw Error("URL parameters don't seem to work");
 });
 
+registerTest("URL parameters with multiple parameters working?", async () => {
+  app.get(
+    "/api/:action/:action2/:testtest",
+    (req) => req.parameters.action2 + req.parameters.testtest,
+  );
+
+  const content = await requestContent(`/api/hello/world/world2`);
+  if (content !== "worldworld2") {
+    throw Error("URL parameters don't seem to work");
+  }
+});
+
+registerTest(
+  "URL parameters should no match when too many slashes working?",
+  async () => {
+    app.get("/api/v2/:action/:action2", (req) => req.parameters.action2);
+
+    const content = await requestContent(`/api/v2/hello/world/i`);
+    if (content !== "Not found.") {
+      throw Error(
+        "URL parameters don't seem to work",
+      );
+    }
+  },
+);
+
 registerTest("URL parameters method matching working working?", async () => {
   app.post("/api2/:action", (req) => "post");
 
   const content = await requestContent(`/api2/hello`);
-  if (content === "post") throw Error("URL parameters method matching doesn't seem to work");
+  if (content === "post") {
+    throw Error("URL parameters method matching doesn't seem to work");
+  }
 });
 
-registerTest("URL parameters should no match with different slash positioning?", async () => {
-  app.get("/api3/:action/:value/more", (req) => "matched");
+registerTest(
+  "URL parameters should no match with different slash positioning?",
+  async () => {
+    app.get("/api3/:action/:value/more", (req) => "matched");
 
-  const content = await requestContent(`/api3/hello/test`);
-  if (content === "matched") throw Error("URL parameters slash positioning caused an error");
-});
+    const content = await requestContent(`/api3/hello/test`);
+    if (content === "matched") {
+      throw Error(
+        "URL parameters slash positioning caused an error",
+      );
+    }
+  },
+);
 
 registerTest("URL query decoding working?", async () => {
   app.get("/search", (req) => JSON.stringify(req.query));
@@ -103,9 +138,7 @@ registerTest("URL query decoding working?", async () => {
   const content = await requestContent(
     "/search?q=foo+bar&withCharsThatNeedEscaping=%24%26",
   );
-  if (
-    content !== `{"q":"foo bar","withCharsThatNeedEscaping":"$&"}`
-  ) {
+  if (content !== `{"q":"foo bar","withCharsThatNeedEscaping":"$&"}`) {
     throw Error("URL query decoding doesn't seem to work");
   }
 });
@@ -121,7 +154,7 @@ registerTest("Custom fallback handler working?", async () => {
 
 registerTest("Regex routes working?", async () => {
   app.get(
-    new RegExp("\/hello-world\/(.*)"),
+    new RegExp("/hello-world/(.*)"),
     (req) => JSON.stringify(req.matches),
   );
 
@@ -197,10 +230,7 @@ registerTest("Body parsing working if passed FormData?", async () => {
 registerTest("Query schemas working?", async () => {
   app.get("/test-query-schema-working", (req) => "Hello, World!", {
     schema: {
-      query: [
-        mustExist("hello"),
-        valueMustBeOfType("hello", "string"),
-      ],
+      query: [mustExist("hello"), valueMustBeOfType("hello", "string")],
     },
   });
 
@@ -213,10 +243,7 @@ registerTest("Query schemas working?", async () => {
 registerTest("Query schemas failing if wrong query provided?", async () => {
   app.get("/test-query-schema-failing", (req) => "Hello, World!", {
     schema: {
-      query: [
-        mustExist("hello"),
-        valueMustBeOfType("hello", "number"),
-      ],
+      query: [mustExist("hello"), valueMustBeOfType("hello", "number")],
     },
   });
 
@@ -233,10 +260,7 @@ registerTest("Query schemas failing if wrong query provided?", async () => {
 registerTest("Parameter schemas working?", async () => {
   app.get("/test-parameter-schema-working/:hello", (req) => "Hello, World!", {
     schema: {
-      parameters: [
-        mustExist("hello"),
-        valueMustBeOfType("hello", "string"),
-      ],
+      parameters: [mustExist("hello"), valueMustBeOfType("hello", "string")],
     },
   });
 
@@ -253,10 +277,7 @@ registerTest(
   async () => {
     app.get("/test-parameter-schema-failing/:hello", (req) => "Hello, World!", {
       schema: {
-        parameters: [
-          mustExist("hello"),
-          valueMustBeOfType("hello", "number"),
-        ],
+        parameters: [mustExist("hello"), valueMustBeOfType("hello", "number")],
       },
     });
 
@@ -301,10 +322,7 @@ registerTest(
 registerTest("Body schemas working?", async () => {
   app.post("/test-body-schema-working", (req) => "Hello, World!", {
     schema: {
-      body: [
-        mustExist("hello"),
-        valueMustBeOfType("hello", "string"),
-      ],
+      body: [mustExist("hello"), valueMustBeOfType("hello", "string")],
     },
   });
 
@@ -327,10 +345,7 @@ registerTest(
   async () => {
     app.post("/test-body-schema-failing", (req) => "Hello, World!", {
       schema: {
-        body: [
-          mustExist("hello"),
-          valueMustBeOfType("hello", "string"),
-        ],
+        body: [mustExist("hello"), valueMustBeOfType("hello", "string")],
       },
     });
 
@@ -401,9 +416,7 @@ registerTest("mustExist function working if key not found?", async () => {
 
 registerTest("valueMustBeByType function working?", async () => {
   const schemaContext = { test: 1 };
-  if (
-    !valueMustBeOfType("test", "number").bind(schemaContext)(schemaContext)
-  ) {
+  if (!valueMustBeOfType("test", "number").bind(schemaContext)(schemaContext)) {
     throw Error("valueMustBeByType function returned wrong value");
   }
 });
@@ -440,10 +453,9 @@ registerTest("Replacement of raw file content working?", async () => {
   app.register((req, res) => {
     if (req.url === "/example.txt") {
       if (res.content instanceof Uint8Array) {
-        res.content = new TextDecoder().decode(res.content).replace(
-          "Hello",
-          "Hi",
-        );
+        res.content = new TextDecoder()
+          .decode(res.content)
+          .replace("Hello", "Hi");
       }
     }
     return res;
@@ -484,9 +496,7 @@ registerTest("Headers set?", async () => {
   });
 
   const headers = await requestHeaders("/headers-example");
-  if (
-    headers.get("test") !== "okay" || headers.get("test2") !== "okaytoo"
-  ) {
+  if (headers.get("test") !== "okay" || headers.get("test2") !== "okaytoo") {
     throw new Error("Headers not set properly");
   }
 });
