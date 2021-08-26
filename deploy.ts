@@ -1,7 +1,4 @@
-import OriginalAqua, {
-  Options as OriginalOptions,
-  Request as AquaRequest,
-} from "./aqua.ts";
+import OriginalAqua, { Options as OriginalOptions } from "./aqua.ts";
 import { getAquaRequestFromNativeRequest } from "./shared.ts";
 
 export * from "./aqua.ts";
@@ -27,7 +24,7 @@ export default class Aqua extends OriginalAqua {
     super(-1, { ...options });
   }
 
-  protected listen(port: number) {
+  protected listen(_port: number) {
     addEventListener("fetch", async (event) => {
       const req = await getAquaRequestFromNativeRequest(event);
       this.handleRequest(req);

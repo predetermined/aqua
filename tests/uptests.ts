@@ -83,6 +83,32 @@ registerTest("URL parameters working?", async () => {
   if (content !== "hello") throw Error("URL parameters don't seem to work");
 });
 
+registerTest("URL parameters with multiple parameters working?", async () => {
+  app.get(
+    "/api/:action/:action2/:testtest",
+    (req) => req.parameters.action2 + req.parameters.testtest,
+  );
+
+  const content = await requestContent(`/api/hello/world/world2`);
+  if (content !== "worldworld2") {
+    throw Error("URL parameters don't seem to work");
+  }
+});
+
+registerTest(
+  "URL parameters should no match when too many slashes working?",
+  async () => {
+    app.get("/api/v2/:action/:action2", (req) => req.parameters.action2);
+
+    const content = await requestContent(`/api/v2/hello/world/i`);
+    if (content !== "Not found.") {
+      throw Error(
+        "URL parameters don't seem to work",
+      );
+    }
+  },
+);
+
 registerTest("URL parameters method matching working working?", async () => {
   app.post("/api2/:action", (req) => "post");
 

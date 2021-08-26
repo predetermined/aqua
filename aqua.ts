@@ -205,35 +205,22 @@ export default class Aqua {
   private connectURLParameters(
     route: StringRoute,
     requestedPath: string,
-  ): { [name: string]: string } {
-    return route.path.match(/:([a-zA-Z0-9_]*)/g)?.reduce(
-      (
-        storage: { urlParameters: any; currentRequestedPath: string },
-        urlParameterWithColon: string,
-      ) => {
-        const urlParameter = urlParameterWithColon.replace(":", "");
-        const partTillParameter = route.path.split(urlParameterWithColon)[0];
-        const urlParameterValue = storage.currentRequestedPath
-          .replace(
-            new RegExp(partTillParameter.replace(/:([a-zA-Z0-9_]*)/, ".*?")),
-            "",
-          )
-          .match(/([^\/]*)/g)?.[0];
-        const currentRequestedPath = storage.currentRequestedPath.replace(
-          /:([a-zA-Z0-9_]*)/,
-          "",
-        );
+  ): Record<string, string> {
+    const urlParametersWithColon = route.path.match(/:([a-zA-Z0-9_]*)/g) ?? [];
+    const urlParameters: Record<string, string> = {};
+    const slashSplittedRoutePath = route.path.split("/");
+    const slashSplittedRequestedPath = requestedPath.split("/");
 
-        return {
-          urlParameters: {
-            ...storage.urlParameters,
-            [urlParameter]: urlParameterValue,
-          },
-          currentRequestedPath,
-        };
-      },
-      { urlParameters: {}, currentRequestedPath: requestedPath },
-    ).urlParameters;
+    for (const urlParameterWithColon of urlParametersWithColon) {
+      const indexPos = slashSplittedRoutePath.indexOf(urlParameterWithColon);
+      if (indexPos === -1) continue;
+      const value = slashSplittedRequestedPath[indexPos];
+
+      if (!value) continue;
+      urlParameters[urlParameterWithColon.slice(1)] = value;
+    }
+
+    return urlParameters;
   }
 
   private isTextContent(rawResponse: RawResponse): rawResponse is string {
