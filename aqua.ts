@@ -56,7 +56,7 @@ export interface Request {
 
 type OutgoingMiddleware = (
   req: Request,
-  res: Response,
+  res: ResponseObject,
 ) => Response | Promise<Response>;
 type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
 
@@ -252,13 +252,12 @@ export default class Aqua {
 
   private async getOutgoingResponseAfterApplyingMiddlewares(
     req: Request,
-    res: Response,
-  ): Promise<Response> {
-    let responseAfterMiddlewares: Response = res;
+    res: ResponseObject,
+  ): Promise<ResponseObject> {
+    let responseAfterMiddlewares: ResponseObject = res;
     for (const middleware of this.outgoingMiddlewares) {
-      responseAfterMiddlewares = await middleware(
-        req,
-        responseAfterMiddlewares,
+      responseAfterMiddlewares = this.convertResponseToResponseObject(
+        await middleware(req, responseAfterMiddlewares),
       );
     }
     return responseAfterMiddlewares;
@@ -330,7 +329,7 @@ export default class Aqua {
         [];
     }
 
-    const formattedResponse: Response = this.convertResponseToResponseObject(
+    const formattedResponse = this.convertResponseToResponseObject(
       await (additionalResponseOptions.customResponseHandler
         ? additionalResponseOptions.customResponseHandler(req)
         : (route as StringRoute | RegexRoute).responseHandler(req)),
@@ -341,7 +340,7 @@ export default class Aqua {
       return;
     }
 
-    const responseAfterMiddlewares: Response = await this
+    const responseAfterMiddlewares = await this
       .getOutgoingResponseAfterApplyingMiddlewares(
         req,
         formattedResponse,
@@ -350,9 +349,11 @@ export default class Aqua {
     req._internal.respond(responseAfterMiddlewares);
   }
 
-  private async getFallbackHandlerResponse(req: Request): Promise<Response> {
+  private async getFallbackHandlerResponse(
+    req: Request,
+  ): Promise<ResponseObject> {
     if (this.fallbackHandler) {
-      const fallbackResponse: Response = this.convertResponseToResponseObject(
+      const fallbackResponse = this.convertResponseToResponseObject(
         await this.fallbackHandler(req),
       );
 
