@@ -33,24 +33,25 @@ export function getFinalizedHeaders(res: AquaResponse): Headers {
 }
 
 export async function getAquaRequestFromNativeRequest(
-  { request: req, respondWith }: Deno.RequestEvent,
-  conn?: Deno.Conn,
+  event: Deno.RequestEvent,
+  conn?: Deno.Conn
 ): Promise<AquaRequest> {
+  const { request: req } = event;
   const url = new URL(req.url).pathname;
   const { body, files } = parseBody(
-    new Uint8Array(await req.arrayBuffer()),
+    new Uint8Array(await req.arrayBuffer())
   ) ?? { body: {}, files: {} };
 
   return {
     _internal: {
       respond(res: AquaResponse) {
-        respondWith(
+        event.respondWith(
           new Response(res.content, {
             status: res.redirect
               ? res.statusCode || 301
               : res.statusCode || 200,
             headers: getFinalizedHeaders(res),
-          }),
+          })
         );
       },
     },
