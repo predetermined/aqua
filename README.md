@@ -144,16 +144,6 @@ by providing custom ones. However, you can still overwrite existing headers.
 
 ## More examples
 
-### Respond with the content of a file
-
-```typescript
-app.get("/", async (req) => {
-  return await app.render("index.html");
-});
-```
-
-_Please note that you must run your application with the `--allow-read` flag._
-
 ### Provide own fallback handler
 
 Your provided fallback handler will be executed if no route has been found.
