@@ -1,4 +1,4 @@
-import { textDecoder, textEncoder, Json } from "../shared.ts";
+import { Json, textDecoder, textEncoder } from "../shared.ts";
 
 export function parseBody(buffer: Uint8Array): {
   body: Record<string, Json>;

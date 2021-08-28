@@ -34,12 +34,12 @@ export function getFinalizedHeaders(res: AquaResponse): Headers {
 
 export async function getAquaRequestFromNativeRequest(
   event: Deno.RequestEvent,
-  conn?: Deno.Conn
+  conn?: Deno.Conn,
 ): Promise<AquaRequest> {
   const { request: req } = event;
   const url = new URL(req.url).pathname;
   const { body, files } = parseBody(
-    new Uint8Array(await req.arrayBuffer())
+    new Uint8Array(await req.arrayBuffer()),
   ) ?? { body: {}, files: {} };
 
   return {
@@ -51,7 +51,7 @@ export async function getAquaRequestFromNativeRequest(
               ? res.statusCode || 301
               : res.statusCode || 200,
             headers: getFinalizedHeaders(res),
-          })
+          }),
         );
       },
     },
