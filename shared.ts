@@ -1,7 +1,7 @@
 import {
   Method,
   Request as AquaRequest,
-  Response as AquaResponse,
+  ResponseObject as AquaResponseObject,
 } from "./aqua.ts";
 import { parseBody, parseCookies, parseQuery } from "./helpers/parsing.ts";
 
@@ -16,7 +16,7 @@ export type Json =
 export const textDecoder = new TextDecoder();
 export const textEncoder = new TextEncoder();
 
-export function getFinalizedHeaders(res: AquaResponse): Headers {
+export function getFinalizedHeaders(res: AquaResponseObject): Headers {
   const headers = new Headers(res.headers || {});
 
   if (res.cookies) {
@@ -44,7 +44,7 @@ export async function getAquaRequestFromNativeRequest(
 
   return {
     _internal: {
-      respond(res: AquaResponse) {
+      respond(res) {
         event.respondWith(
           new Response(res.content, {
             status: res.redirect

@@ -34,12 +34,12 @@ interface RedirectResponse {
   content?: string | Uint8Array;
 }
 
-type ResponseObject = ContentResponse | RedirectResponse;
+export type ResponseObject = ContentResponse | RedirectResponse;
 export type Response = string | Uint8Array | ResponseObject;
 
 export interface Request {
   _internal: {
-    respond(res: Response): void;
+    respond(res: ResponseObject): void;
   };
   raw: Deno.RequestEvent["request"];
   url: string;
@@ -231,9 +231,7 @@ export default class Aqua {
     return response instanceof Uint8Array;
   }
 
-  private convertResponseToResponseObject(
-    response: Response,
-  ): ResponseObject {
+  private convertResponseToResponseObject(response: Response): ResponseObject {
     if (this.isTextContent(response)) {
       return {
         headers: { "Content-Type": "text/html; charset=UTF-8" },
