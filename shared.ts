@@ -16,6 +16,15 @@ export type Json =
 export const textDecoder = new TextDecoder();
 export const textEncoder = new TextEncoder();
 
+export function getFinalizedStatusCode(
+  res: AquaResponseObject,
+  fallbackStatusCode: number,
+): number {
+  return res.redirect
+    ? res.statusCode ?? 301
+    : res.statusCode ?? fallbackStatusCode;
+}
+
 export function getFinalizedHeaders(res: AquaResponseObject): Headers {
   const headers = new Headers(res.headers || {});
 
@@ -47,9 +56,7 @@ export async function getAquaRequestFromNativeRequest(
       respond(res) {
         event.respondWith(
           new Response(res.content, {
-            status: res.redirect
-              ? res.statusCode || 301
-              : res.statusCode || 200,
+            status: getFinalizedStatusCode(res, 200),
             headers: getFinalizedHeaders(res),
           }),
         );

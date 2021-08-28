@@ -1,4 +1,8 @@
-import { getAquaRequestFromNativeRequest, Json } from "./shared.ts";
+import {
+  getAquaRequestFromNativeRequest,
+  getFinalizedStatusCode,
+  Json,
+} from "./shared.ts";
 import {
   findMatchingRegexRoute,
   findMatchingStaticRoute,
@@ -361,11 +365,8 @@ export default class Aqua {
         return { statusCode: 404, content: "Not found." };
       }
 
-      const statusCode =
-        (!fallbackResponse.redirect && fallbackResponse.statusCode) || 404;
-
       return {
-        statusCode,
+        statusCode: getFinalizedStatusCode(fallbackResponse, 404),
         headers: fallbackResponse.headers,
         content: fallbackResponse.content ||
           "No fallback response content provided.",
