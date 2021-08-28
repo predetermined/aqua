@@ -18,15 +18,6 @@ export type Method =
   | "TRACE"
   | "PATCH";
 
-type OutgoingMiddleware = (
-  req: Request,
-  res: Response,
-) => Response | Promise<Response>;
-type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
-
-type RawResponse = string | Uint8Array | Response;
-export type Response = ContentResponse | RedirectResponse;
-
 interface ContentResponse {
   statusCode?: number;
   headers?: Record<string, string>;
@@ -42,6 +33,9 @@ interface RedirectResponse {
   redirect: string;
   content?: string | Uint8Array;
 }
+
+type ResponseObject = ContentResponse | RedirectResponse;
+export type Response = string | Uint8Array | ResponseObject;
 
 export interface Request {
   _internal: {
@@ -60,7 +54,13 @@ export interface Request {
   conn?: Deno.Conn;
 }
 
-type ResponseHandler = (req: Request) => RawResponse | Promise<RawResponse>;
+type OutgoingMiddleware = (
+  req: Request,
+  res: Response,
+) => Response | Promise<Response>;
+type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
+
+type ResponseHandler = (req: Request) => Response | Promise<Response>;
 
 interface RouteTemplate {
   options?: RoutingOptions;
@@ -223,27 +223,29 @@ export default class Aqua {
     return urlParameters;
   }
 
-  private isTextContent(rawResponse: RawResponse): rawResponse is string {
-    return typeof rawResponse === "string";
+  private isTextContent(response: Response): response is string {
+    return typeof response === "string";
   }
 
-  private isDataContent(rawResponse: RawResponse): rawResponse is Uint8Array {
-    return rawResponse instanceof Uint8Array;
+  private isDataContent(response: Response): response is Uint8Array {
+    return response instanceof Uint8Array;
   }
 
-  private formatRawResponse(rawResponse: RawResponse): Response {
-    if (this.isTextContent(rawResponse)) {
+  private convertResponseToResponseObject(
+    response: Response,
+  ): ResponseObject {
+    if (this.isTextContent(response)) {
       return {
         headers: { "Content-Type": "text/html; charset=UTF-8" },
-        content: rawResponse,
+        content: response,
       };
     }
 
-    if (this.isDataContent(rawResponse)) {
-      return { content: rawResponse };
+    if (this.isDataContent(response)) {
+      return { content: response };
     }
 
-    return rawResponse;
+    return response;
   }
 
   private isRegexPath(path: string | RegExp): path is RegExp {
@@ -330,7 +332,7 @@ export default class Aqua {
         [];
     }
 
-    const formattedResponse: Response = this.formatRawResponse(
+    const formattedResponse: Response = this.convertResponseToResponseObject(
       await (additionalResponseOptions.customResponseHandler
         ? additionalResponseOptions.customResponseHandler(req)
         : (route as StringRoute | RegexRoute).responseHandler(req)),
@@ -352,7 +354,7 @@ export default class Aqua {
 
   private async getFallbackHandlerResponse(req: Request): Promise<Response> {
     if (this.fallbackHandler) {
-      const fallbackResponse: Response = this.formatRawResponse(
+      const fallbackResponse: Response = this.convertResponseToResponseObject(
         await this.fallbackHandler(req),
       );
 
