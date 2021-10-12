@@ -99,17 +99,10 @@ export interface Options {
   };
 }
 
-export type RoutingSchemaValidationFunction = (
-  this: RoutingSchemaValidationContext,
-  context: RoutingSchemaValidationContext,
+export type RoutingSchemaValidationFunction<Context> = (
+  this: Context,
+  context: Context,
 ) => boolean;
-
-type BroadestSchemaValidationContextValueTypes = Json;
-
-type RoutingSchemaValidationContext = Record<
-  string,
-  BroadestSchemaValidationContextValueTypes
->;
 
 type RoutingSchemaKeys =
   | "body"
@@ -119,7 +112,9 @@ type RoutingSchemaKeys =
   | "headers";
 
 type RoutingSchema = {
-  [requestKey in RoutingSchemaKeys]?: RoutingSchemaValidationFunction[];
+  [requestKey in RoutingSchemaKeys]?: RoutingSchemaValidationFunction<
+    Request[requestKey]
+  >[];
 };
 
 export interface RoutingOptions {
@@ -131,7 +126,9 @@ export enum MiddlewareType {
   Outgoing = "Outgoing",
 }
 
-export function mustExist(key: string): RoutingSchemaValidationFunction {
+export function mustExist(
+  key: string,
+): RoutingSchemaValidationFunction<Record<string, unknown>> {
   return function () {
     return Object.keys(this).includes(key);
   };
@@ -140,7 +137,7 @@ export function mustExist(key: string): RoutingSchemaValidationFunction {
 export function valueMustBeOfType(
   key: string,
   type: "string" | "number" | "boolean" | "object" | "undefined",
-): RoutingSchemaValidationFunction {
+): RoutingSchemaValidationFunction<Record<string, unknown>> {
   return function () {
     return Object.keys(this).includes(key) && typeof this[key] === type;
   };
@@ -148,8 +145,8 @@ export function valueMustBeOfType(
 
 export function mustContainValue(
   key: string,
-  values: BroadestSchemaValidationContextValueTypes[],
-): RoutingSchemaValidationFunction {
+  values: unknown[],
+): RoutingSchemaValidationFunction<Record<string, unknown>> {
   return function () {
     return Object.keys(this).includes(key) && values.includes(this[key]);
   };
@@ -310,9 +307,9 @@ export default class Aqua {
         ) as RoutingSchemaKeys[]
       ) {
         for (
-          const validationFunction of route.options.schema[
+          const validationFunction of (route.options.schema[
             routingSchemaKey
-          ] || []
+          ] || []) as RoutingSchemaValidationFunction<unknown>[]
         ) {
           const schemaContext = req[routingSchemaKey];
           if (!validationFunction.bind(schemaContext)(schemaContext)) {
