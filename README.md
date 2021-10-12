@@ -52,13 +52,14 @@ app.get("/", (req) => {
   schema: {
     query: [
       mustExist("hello"),
+      (query) => query["hello"] !== "world",
     ],
   },
 });
 ```
 
-This schema would only allow requests with the `hello` query (for example,
-`GET /?hello=yes`). The following helper functions are currently available:
+This schema would only allow requests with the `hello` query present and the value not being `"world"` 
+(for example, `GET /?hello=yes`). The following helper functions are currently available:
 
 - `mustExist(key)`
 - `valueMustBeOfType(key, type)`

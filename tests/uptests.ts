@@ -102,9 +102,7 @@ registerTest(
 
     const content = await requestContent(`/api/v2/hello/world/i`);
     if (content !== "Not found.") {
-      throw Error(
-        "URL parameters don't seem to work",
-      );
+      throw Error("URL parameters don't seem to work");
     }
   },
 );
@@ -125,9 +123,7 @@ registerTest(
 
     const content = await requestContent(`/api3/hello/test`);
     if (content === "matched") {
-      throw Error(
-        "URL parameters slash positioning caused an error",
-      );
+      throw Error("URL parameters slash positioning caused an error");
     }
   },
 );
@@ -268,6 +264,56 @@ registerTest("Parameter schemas working?", async () => {
   if (content !== "Hello, World!") {
     throw Error(
       "Parameter schema validation functions passed although they shouldn't",
+    );
+  }
+});
+
+registerTest("Async schema validation functions passes?", async () => {
+  app.get(
+    "/test-parameter-schema-working-async/:hello",
+    (_req) => "Hello, World!",
+    {
+      schema: {
+        parameters: [
+          async (parameters) => {
+            return await new Promise((r) => r(!!parameters["hello"]));
+          },
+        ],
+      },
+    },
+  );
+
+  const content = await requestContent(
+    "/test-parameter-schema-working-async/test",
+  );
+  if (content !== "Hello, World!") {
+    throw Error(
+      "Async schema validation function didn't pass although it shouldn",
+    );
+  }
+});
+
+registerTest("Async schema validation functions fails?", async () => {
+  app.get(
+    "/test-parameter-schema-working-async-fail/:hello",
+    (_req) => "Hello, World!",
+    {
+      schema: {
+        parameters: [
+          async (parameters) => {
+            return await new Promise((r) => r(!!parameters["notfound"]));
+          },
+        ],
+      },
+    },
+  );
+
+  const content = await requestContent(
+    "/test-parameter-schema-working-async-fail/test",
+  );
+  if (content === "Hello, World!") {
+    throw Error(
+      "Async schema validation function passed although it shouldn't",
     );
   }
 });
