@@ -102,7 +102,7 @@ export interface Options {
 export type RoutingSchemaValidationFunction<Context> = (
   this: Context,
   context: Context,
-) => boolean;
+) => boolean | Promise<boolean>;
 
 type RoutingSchemaKeys =
   | "body"
@@ -312,7 +312,7 @@ export default class Aqua {
           ] || []) as RoutingSchemaValidationFunction<unknown>[]
         ) {
           const schemaContext = req[routingSchemaKey];
-          if (!validationFunction.bind(schemaContext)(schemaContext)) {
+          if (!(await validationFunction.bind(schemaContext)(schemaContext))) {
             passedAllValidations = false;
             break routingSchemaIterator;
           }
