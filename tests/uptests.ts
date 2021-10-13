@@ -568,6 +568,21 @@ registerTest("Headers received correct?", async () => {
   }
 });
 
+registerTest("Error in response handler handled correctly?", async () => {
+  const route = "/error-in-response-handler";
+
+  app.get(route, (_req) => {
+    throw new Error("Hello, World!");
+  });
+
+  const content = await requestContent(route);
+  if (content !== "Error: Hello, World!") {
+    throw new Error(
+      `Expected thrown error in response handler to make the route return "Error: Hello: World!". Instead got: ${content}`,
+    );
+  }
+});
+
 setInterval(() => {
   if (registeredTests === solvedTests) Deno.exit(0);
 }, 500);

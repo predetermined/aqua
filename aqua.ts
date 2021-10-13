@@ -330,24 +330,28 @@ export default class Aqua {
         [];
     }
 
-    const formattedResponse = this.convertResponseToResponseObject(
-      await (additionalResponseOptions.customResponseHandler
-        ? additionalResponseOptions.customResponseHandler(req)
-        : (route as StringRoute | RegexRoute).responseHandler(req)),
-    );
-
-    if (!formattedResponse) {
-      req._internal.respond({ content: "No response content provided." });
-      return;
-    }
-
-    const responseAfterMiddlewares = await this
-      .getOutgoingResponseAfterApplyingMiddlewares(
-        req,
-        formattedResponse,
+    try {
+      const formattedResponse = this.convertResponseToResponseObject(
+        await (additionalResponseOptions.customResponseHandler
+          ? additionalResponseOptions.customResponseHandler(req)
+          : (route as StringRoute | RegexRoute).responseHandler(req)),
       );
 
-    req._internal.respond(responseAfterMiddlewares);
+      if (!formattedResponse) {
+        req._internal.respond({ content: "No response content provided." });
+        return;
+      }
+
+      const responseAfterMiddlewares = await this
+        .getOutgoingResponseAfterApplyingMiddlewares(
+          req,
+          formattedResponse,
+        );
+
+      req._internal.respond(responseAfterMiddlewares);
+    } catch (error) {
+      req._internal.respond({ statusCode: 500, content: String(error) });
+    }
   }
 
   private async getFallbackHandlerResponse(
