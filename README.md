@@ -52,7 +52,7 @@ app.get("/", (req) => {
   schema: {
     query: [
       mustExist("hello"),
-      (query) => query["hello"] !== "world",
+      (query) => query.hello !== "world",
     ],
   },
 });
@@ -69,7 +69,7 @@ You can of course also build your own schema validation functions. Here's how
 the `mustExist` function looks:
 
 ```typescript
-function mustExist(key: string): RoutingSchemaValidationFunction {
+function mustExist(key: string): RoutingSchemaValidationFunction<Record<string, unknown>> {
   return (context) => {
     /**
      * `context` could either be a `cookies`,
