@@ -1,4 +1,5 @@
 import Aqua, {
+  ErrorType,
   MiddlewareType,
   mustContainValue,
   mustExist,
@@ -140,9 +141,14 @@ registerTest("URL query decoding working?", async () => {
 });
 
 registerTest("Custom fallback handler working?", async () => {
-  app.provideFallback((req) => "Nothing to see here");
+  const route = `/this_route_doesnt_exist`;
 
-  const content = await requestContent(`/this_route_doesnt_exist`);
+  app.provideFallback((req) => {
+    if (req.url !== route) return null;
+    return "Nothing to see here";
+  });
+
+  const content = await requestContent(route);
   if (content !== "Nothing to see here") {
     throw Error("Custom fallback handlers don't seem to work");
   }
@@ -579,6 +585,42 @@ registerTest("Error in response handler handled correctly?", async () => {
   if (content !== "Error: Hello, World!") {
     throw new Error(
       `Expected thrown error in response handler to make the route return "Error: Hello: World!". Instead got: ${content}`,
+    );
+  }
+});
+
+registerTest("Fallback handler error types working?", async () => {
+  const route = "/fallback-handler-error-type";
+
+  app.get(route, (_req) => {
+    throw new Error("Hello, World!");
+  });
+
+  app.provideFallback((_req, errorType) => {
+    if (errorType !== ErrorType.ErrorThrownInResponseHandler) return null;
+    return "Hello World failed";
+  });
+
+  const content = await requestContent(route);
+  if (content !== "Hello World failed") {
+    throw new Error(
+      `Expected fallback handler to return "Hello World failed". Instead got: ${content}`,
+    );
+  }
+
+  // Non-matching route
+  app.get(
+    route,
+    (_req) => {
+      return "Hello, World!";
+    },
+    { schema: { body: [() => false] } },
+  );
+
+  const contentWithNoFallbackHandlerMatch = await requestContent(route);
+  if (contentWithNoFallbackHandlerMatch !== "Not found.") {
+    throw new Error(
+      `Expected default not found response to return "Not found.". Instead got: ${content}`,
     );
   }
 });
