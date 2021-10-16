@@ -347,11 +347,6 @@ export default class Aqua {
           : (route as StringRoute | RegexRoute).responseHandler(req)),
       );
 
-      if (!formattedResponse) {
-        req._internal.respond({ content: "No response content provided." });
-        return;
-      }
-
       const responseAfterMiddlewares = await this
         .getOutgoingResponseAfterApplyingMiddlewares(
           req,
