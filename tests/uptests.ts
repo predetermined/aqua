@@ -592,23 +592,35 @@ registerTest("Error in response handler handled correctly?", async () => {
 registerTest("Fallback handler error types working?", async () => {
   const route = "/fallback-handler-error-type";
 
+  app.provideFallback((_req, errorType) => {
+    switch (errorType) {
+      case ErrorType.ErrorThrownInResponseHandler:
+        return "ErrorThrownInResponseHandler";
+      case ErrorType.NotFound:
+        return "NotFound";
+      case ErrorType.SchemaMismatch:
+        return "SchemaMismatch";
+    }
+  });
+
+  const content1 = await requestContent(route);
+  if (content1 !== "NotFound") {
+    throw new Error(
+      `Expected fallback handler to return "NotFound". Instead got: ${content1}`,
+    );
+  }
+
   app.get(route, (_req) => {
     throw new Error("Hello, World!");
   });
 
-  app.provideFallback((_req, errorType) => {
-    if (errorType !== ErrorType.ErrorThrownInResponseHandler) return null;
-    return "Hello World failed";
-  });
-
-  const content = await requestContent(route);
-  if (content !== "Hello World failed") {
+  const content2 = await requestContent(route);
+  if (content2 !== "ErrorThrownInResponseHandler") {
     throw new Error(
-      `Expected fallback handler to return "Hello World failed". Instead got: ${content}`,
+      `Expected fallback handler to return "ErrorThrownInResponseHandler". Instead got: ${content2}`,
     );
   }
 
-  // Non-matching route
   app.get(
     route,
     (_req) => {
@@ -617,10 +629,10 @@ registerTest("Fallback handler error types working?", async () => {
     { schema: { body: [() => false] } },
   );
 
-  const contentWithNoFallbackHandlerMatch = await requestContent(route);
-  if (contentWithNoFallbackHandlerMatch !== "Not found.") {
+  const content3 = await requestContent(route);
+  if (content3 !== "SchemaMismatch") {
     throw new Error(
-      `Expected default not found response to return "Not found.". Instead got: ${content}`,
+      `Expected fallback handler to return "SchemaMismatch". Instead got: ${content3}`,
     );
   }
 });
