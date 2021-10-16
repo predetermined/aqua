@@ -66,6 +66,17 @@ type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
 
 type ResponseHandler = (req: Request) => Response | Promise<Response>;
 
+export enum ErrorType {
+  NotFound,
+  SchemaMismatch,
+  ErrorThrownInResponseHandler,
+}
+
+type FallbackHandler = (
+  req: Request,
+  errorType: ErrorType,
+) => Response | Promise<Response> | null | Promise<null>;
+
 interface RouteTemplate {
   options?: RoutingOptions;
   responseHandler: ResponseHandler;
@@ -126,6 +137,8 @@ export enum MiddlewareType {
   Outgoing = "Outgoing",
 }
 
+const NOT_FOUND_RESPONSE = { statusCode: 404, content: "Not found." };
+
 export function mustExist(
   key: string,
 ): RoutingSchemaValidationFunction<Record<string, unknown>> {
@@ -159,7 +172,7 @@ export default class Aqua {
   private staticRoutes: StaticRoute[] = [];
   private incomingMiddlewares: IncomingMiddleware[] = [];
   private outgoingMiddlewares: OutgoingMiddleware[] = [];
-  private fallbackHandler: ResponseHandler | null = null;
+  private fallbackHandler: FallbackHandler | null = null;
 
   constructor(port: number, options?: Options) {
     this.options = options || {};
@@ -286,15 +299,6 @@ export default class Aqua {
         route as StringRoute,
         requestedPath,
       );
-
-      if (
-        Object.values(req.parameters).find(
-          (parameterValue) => parameterValue === "",
-        ) !== undefined
-      ) {
-        await this.respondWithNoRouteFound(req);
-        return;
-      }
     }
 
     if (route.options?.schema) {
@@ -320,7 +324,13 @@ export default class Aqua {
       }
 
       if (!passedAllValidations) {
-        await this.respondWithNoRouteFound(req);
+        req._internal.respond(
+          await this.getFallbackHandlerResponse(
+            req,
+            ErrorType.SchemaMismatch,
+            NOT_FOUND_RESPONSE,
+          ),
+        );
         return;
       }
     }
@@ -337,11 +347,6 @@ export default class Aqua {
           : (route as StringRoute | RegexRoute).responseHandler(req)),
       );
 
-      if (!formattedResponse) {
-        req._internal.respond({ content: "No response content provided." });
-        return;
-      }
-
       const responseAfterMiddlewares = await this
         .getOutgoingResponseAfterApplyingMiddlewares(
           req,
@@ -350,21 +355,34 @@ export default class Aqua {
 
       req._internal.respond(responseAfterMiddlewares);
     } catch (error) {
-      req._internal.respond({ statusCode: 500, content: String(error) });
+      req._internal.respond(
+        await this.getFallbackHandlerResponse(
+          req,
+          ErrorType.ErrorThrownInResponseHandler,
+          { statusCode: 500, content: String(error) },
+        ),
+      );
     }
   }
 
   private async getFallbackHandlerResponse(
     req: Request,
+    errorType: ErrorType,
+    defaultErrorResponse: ResponseObject,
   ): Promise<ResponseObject> {
     if (this.fallbackHandler) {
-      const fallbackResponse = this.convertResponseToResponseObject(
-        await this.fallbackHandler(req),
+      const fallbackHandlerResponse = await this.fallbackHandler(
+        req,
+        errorType,
       );
 
-      if (!fallbackResponse) {
-        return { statusCode: 404, content: "Not found." };
+      if (!fallbackHandlerResponse) {
+        return defaultErrorResponse;
       }
+
+      const fallbackResponse = this.convertResponseToResponseObject(
+        fallbackHandlerResponse,
+      );
 
       return {
         statusCode: getFinalizedStatusCode(fallbackResponse, 404),
@@ -374,11 +392,7 @@ export default class Aqua {
       };
     }
 
-    return { statusCode: 404, content: "Not found." };
-  }
-
-  private async respondWithNoRouteFound(req: Request): Promise<void> {
-    req._internal.respond(await this.getFallbackHandlerResponse(req));
+    return defaultErrorResponse;
   }
 
   private async handleStaticRequest(
@@ -401,7 +415,11 @@ export default class Aqua {
         content: await Deno.readFile(folder + resourcePath),
       };
     } catch {
-      return await this.getFallbackHandlerResponse(req);
+      return await this.getFallbackHandlerResponse(
+        req,
+        ErrorType.NotFound,
+        NOT_FOUND_RESPONSE,
+      );
     }
   }
 
@@ -468,10 +486,16 @@ export default class Aqua {
       }
     }
 
-    this.respondWithNoRouteFound(req);
+    req._internal.respond(
+      await this.getFallbackHandlerResponse(
+        req,
+        ErrorType.NotFound,
+        NOT_FOUND_RESPONSE,
+      ),
+    );
   }
 
-  public provideFallback(responseHandler: ResponseHandler): Aqua {
+  public provideFallback(responseHandler: FallbackHandler): Aqua {
     this.fallbackHandler = responseHandler;
     return this;
   }

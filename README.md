@@ -11,7 +11,9 @@ Aqua is a minimal and fast web framework.
 - [Deno Deploy support](#using-deno-deploy)
 
 ## Example usage
+
 Please make sure to have **at least Deno version 1.13** installed.
+
 ```typescript
 import Aqua from "https://deno.land/x/aqua/mod.ts";
 
@@ -24,7 +26,8 @@ app.get("/", (req) => {
 
 ## Routing
 
-You can either use the short-form syntax for the `GET`, `POST`, `PUT`, `PATCH` and `DELETE` method
+You can either use the short-form syntax for the `GET`, `POST`, `PUT`, `PATCH`
+and `DELETE` method
 
 ```typescript
 app.get("/", (req) => "Hello, World!");
@@ -58,8 +61,9 @@ app.get("/", (req) => {
 });
 ```
 
-This schema would only allow requests with the `hello` query present and the value not being `"world"` 
-(for example, `GET /?hello=yes`). The following helper functions are currently available:
+This schema would only allow requests with the `hello` query present and the
+value not being `"world"` (for example, `GET /?hello=yes`). The following helper
+functions are currently available:
 
 - `mustExist(key)`
 - `valueMustBeOfType(key, type)`
@@ -69,7 +73,9 @@ You can of course also build your own schema validation functions. Here's how
 the `mustExist` function looks:
 
 ```typescript
-function mustExist(key: string): RoutingSchemaValidationFunction<Record<string, unknown>> {
+function mustExist(
+  key: string,
+): RoutingSchemaValidationFunction<Record<string, unknown>> {
   return (context) => {
     /**
      * `context` could either be a `cookies`,
@@ -83,27 +89,27 @@ function mustExist(key: string): RoutingSchemaValidationFunction<Record<string, 
 ## Middlewares
 
 You can register middlewares, that will be able to adjust the response object,
-the following way. Thereby you can decide whether you would like to modify the outgoing
-or incoming request.
+the following way. Thereby you can decide whether you would like to modify the
+outgoing or incoming request.
 
 ```typescript
 app.register((req, res) => {
-    /**
-     * Skip Uint8Array responses:
-     * if (typeof res.content !== "string") return res;
-     *
-     * res.content = res.content.replace("Hello", "Hi");
-     */
-    return res;
+  /**
+   * Skip Uint8Array responses:
+   * if (typeof res.content !== "string") return res;
+   *
+   * res.content = res.content.replace("Hello", "Hi");
+   */
+  return res;
 }, MiddlewareType.Outgoing);
 ```
 
 ```typescript
 app.register((req) => {
-    /**
-     * req.query.hello = "world";
-     */
-    return req;
+  /**
+   * req.query.hello = "world";
+   */
+  return req;
 }, MiddlewareType.Incoming);
 ```
 
@@ -150,8 +156,15 @@ by providing custom ones. However, you can still overwrite existing headers.
 Your provided fallback handler will be executed if no route has been found.
 
 ```typescript
-app.provideFallback((req) => {
-  return "No page found, sorry!";
+app.provideFallback((req, errorType) => {
+  if (
+    errorType === ErrorType.NotFound || errorType === ErrorType.SchemaMismatch
+  ) {
+    return "No page found, sorry!";
+  }
+
+  // Provide no custom fallback response for other error types
+  return null;
 });
 ```
 
@@ -235,6 +248,7 @@ app.post("/upload", async (req) => {
 ```
 
 ### Using [Deno Deploy](https://deno.com/deploy)
+
 ```typescript
 import Aqua from "https://deno.land/x/aqua/deploy.ts";
 //                                         ^^^^^^^^^
@@ -246,4 +260,5 @@ app.get("/", (req) => {
   return "Hello, World!";
 });
 ```
+
 Yes, that's it. Everything else should work as you are used to. :)

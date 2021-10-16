@@ -1,4 +1,5 @@
 import Aqua, {
+  ErrorType,
   MiddlewareType,
   mustContainValue,
   mustExist,
@@ -140,9 +141,14 @@ registerTest("URL query decoding working?", async () => {
 });
 
 registerTest("Custom fallback handler working?", async () => {
-  app.provideFallback((req) => "Nothing to see here");
+  const route = `/this_route_doesnt_exist`;
 
-  const content = await requestContent(`/this_route_doesnt_exist`);
+  app.provideFallback((req) => {
+    if (req.url !== route) return null;
+    return "Nothing to see here";
+  });
+
+  const content = await requestContent(route);
   if (content !== "Nothing to see here") {
     throw Error("Custom fallback handlers don't seem to work");
   }
@@ -579,6 +585,54 @@ registerTest("Error in response handler handled correctly?", async () => {
   if (content !== "Error: Hello, World!") {
     throw new Error(
       `Expected thrown error in response handler to make the route return "Error: Hello: World!". Instead got: ${content}`,
+    );
+  }
+});
+
+registerTest("Fallback handler error types working?", async () => {
+  const route = "/fallback-handler-error-type";
+
+  app.provideFallback((_req, errorType) => {
+    switch (errorType) {
+      case ErrorType.ErrorThrownInResponseHandler:
+        return "ErrorThrownInResponseHandler";
+      case ErrorType.NotFound:
+        return "NotFound";
+      case ErrorType.SchemaMismatch:
+        return "SchemaMismatch";
+    }
+  });
+
+  const content1 = await requestContent(route);
+  if (content1 !== "NotFound") {
+    throw new Error(
+      `Expected fallback handler to return "NotFound". Instead got: ${content1}`,
+    );
+  }
+
+  app.get(route, (_req) => {
+    throw new Error("Hello, World!");
+  });
+
+  const content2 = await requestContent(route);
+  if (content2 !== "ErrorThrownInResponseHandler") {
+    throw new Error(
+      `Expected fallback handler to return "ErrorThrownInResponseHandler". Instead got: ${content2}`,
+    );
+  }
+
+  app.get(
+    route,
+    (_req) => {
+      return "Hello, World!";
+    },
+    { schema: { body: [() => false] } },
+  );
+
+  const content3 = await requestContent(route);
+  if (content3 !== "SchemaMismatch") {
+    throw new Error(
+      `Expected fallback handler to return "SchemaMismatch". Instead got: ${content3}`,
     );
   }
 });
