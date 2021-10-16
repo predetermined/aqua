@@ -95,11 +95,11 @@ outgoing or incoming request.
 ```typescript
 app.register((req, res) => {
   /**
-     * Skip Uint8Array responses:
-     * if (typeof res.content !== "string") return res;
-     *
-     * res.content = res.content.replace("Hello", "Hi");
-     */
+   * Skip Uint8Array responses:
+   * if (typeof res.content !== "string") return res;
+   *
+   * res.content = res.content.replace("Hello", "Hi");
+   */
   return res;
 }, MiddlewareType.Outgoing);
 ```
@@ -107,8 +107,8 @@ app.register((req, res) => {
 ```typescript
 app.register((req) => {
   /**
-     * req.query.hello = "world";
-     */
+   * req.query.hello = "world";
+   */
   return req;
 }, MiddlewareType.Incoming);
 ```
@@ -163,7 +163,7 @@ app.provideFallback((req, errorType) => {
     return "No page found, sorry!";
   }
 
-  // Provide no fallback response for other error types
+  // Provide no custom fallback response for other error types
   return null;
 });
 ```
