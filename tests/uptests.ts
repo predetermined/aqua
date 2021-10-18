@@ -650,7 +650,7 @@ registerTest("Fallback handler error types working?", async () => {
   const content4 = await requestContent(route);
   if (content4 !== DEFAULT_NOT_FOUND_CONTENT) {
     throw new Error(
-      `Expected fallback handler to return "Not found.". Instead got: ${content4}`,
+      `Expected fallback handler to return "${DEFAULT_NOT_FOUND_CONTENT}". Instead got: ${content4}`,
     );
   }
 });
