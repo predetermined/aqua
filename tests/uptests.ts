@@ -6,6 +6,8 @@ import Aqua, {
   valueMustBeOfType,
 } from "../mod.ts";
 
+const DEFAULT_NOT_FOUND_CONTENT = "Not found.";
+
 const app = new Aqua(4000);
 let registeredTests = 0;
 let solvedTests = 0;
@@ -102,7 +104,7 @@ registerTest(
     app.get("/api/v2/:action/:action2", (req) => req.parameters.action2);
 
     const content = await requestContent(`/api/v2/hello/world/i`);
-    if (content !== "Not found.") {
+    if (content !== DEFAULT_NOT_FOUND_CONTENT) {
       throw Error("URL parameters don't seem to work");
     }
   },
@@ -633,6 +635,22 @@ registerTest("Fallback handler error types working?", async () => {
   if (content3 !== "SchemaMismatch") {
     throw new Error(
       `Expected fallback handler to return "SchemaMismatch". Instead got: ${content3}`,
+    );
+  }
+
+  app.provideFallback((_req, errorType) => {
+    switch (errorType) {
+      case ErrorType.ErrorThrownInResponseHandler:
+        return "ErrorThrownInResponseHandler";
+      default:
+        return null;
+    }
+  });
+
+  const content4 = await requestContent(route);
+  if (content4 !== DEFAULT_NOT_FOUND_CONTENT) {
+    throw new Error(
+      `Expected fallback handler to return "${DEFAULT_NOT_FOUND_CONTENT}". Instead got: ${content4}`,
     );
   }
 });
