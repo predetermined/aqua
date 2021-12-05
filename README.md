@@ -149,6 +149,25 @@ app.get("/", (req) => {
 Cookies and headers are just getting appended, so no information is getting lost
 by providing custom ones. However, you can still overwrite existing headers.
 
+## Groups
+```typescript
+app.group({ prefix: "/hello" }, (context) => {
+  /**
+   * Would handle <<GET /hello/>>.
+   * It could also handle <<GET /hello>> if you
+   * set the `ignoreTrailingSlash` option to `true`.
+   * `new Aqua(3000, { ignoreTrailingSlash: true });`
+   */
+  context.get("/", () => {
+    return "Hello!";
+  });
+
+  context.get("/world", () => {
+    return "Hello, World!";
+  });
+});
+```
+
 ## More examples
 
 ### Provide own fallback handler
