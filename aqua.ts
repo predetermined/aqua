@@ -79,7 +79,6 @@ type FallbackHandler = (
 
 interface RouteTemplate {
   options?: RoutingOptions;
-  responseHandler: ResponseHandler;
 }
 
 export interface StringRoute extends RouteTemplate {
@@ -87,11 +86,13 @@ export interface StringRoute extends RouteTemplate {
   method: Method;
   usesURLParameters: boolean;
   urlParameterRegex?: RegExp;
+  responseHandler: ResponseHandler;
 }
 
 export interface RegexRoute extends RouteTemplate {
   path: RegExp;
   method: Method;
+  responseHandler: ResponseHandler;
 }
 
 export interface StaticRoute extends RouteTemplate {
@@ -137,6 +138,11 @@ export enum MiddlewareType {
   Outgoing = "Outgoing",
 }
 
+export interface GroupOptions {
+  prefix?: string;
+  schema?: RoutingSchema;
+}
+
 const NOT_FOUND_RESPONSE = { statusCode: 404, content: "Not found." };
 
 export function mustExist(
@@ -165,23 +171,160 @@ export function mustContainValue(
   };
 }
 
-export default class Aqua {
-  protected readonly options: Options = {};
-  private routes: Record<string, StringRoute> = {};
-  private regexRoutes: RegexRoute[] = [];
-  private staticRoutes: StaticRoute[] = [];
-  private incomingMiddlewares: IncomingMiddleware[] = [];
-  private outgoingMiddlewares: OutgoingMiddleware[] = [];
-  private fallbackHandler: FallbackHandler | null = null;
+interface AquaContextOptions {
+  prefix: string;
+  schema?: RoutingSchema;
+}
 
-  constructor(port: number, options?: Options) {
-    this.options = options || {};
-    this.listen(port, {
-      onlyTls: (options?.tls && !options.tls.independentPort) ||
-        options?.tls?.independentPort === port,
+class AquaContext {
+  protected readonly applicationOptions: Options;
+  public readonly options: AquaContextOptions;
+  public routes: Record<string, StringRoute> = {};
+  public regexRoutes: RegexRoute[] = [];
+  public staticRoutes: StaticRoute[] = [];
+  public incomingMiddlewares: IncomingMiddleware[] = [];
+  public outgoingMiddlewares: OutgoingMiddleware[] = [];
+  public fallbackHandler: FallbackHandler | null = null;
+
+  constructor({
+    applicationOptions,
+    options,
+  }: {
+    applicationOptions: Options;
+    options: AquaContextOptions;
+  }) {
+    this.applicationOptions = applicationOptions;
+    this.options = options;
+  }
+
+  public provideFallback(responseHandler: FallbackHandler): AquaContext {
+    this.fallbackHandler = responseHandler;
+    return this;
+  }
+
+  public register<_, Type extends MiddlewareType = MiddlewareType.Outgoing>(
+    middleware: Type extends undefined ? OutgoingMiddleware
+      : Type extends MiddlewareType.Incoming ? IncomingMiddleware
+      : OutgoingMiddleware,
+    type?: Type,
+  ): AquaContext {
+    if (type === MiddlewareType.Incoming) {
+      this.incomingMiddlewares.push(middleware as IncomingMiddleware);
+      return this;
+    }
+
+    this.outgoingMiddlewares.push(middleware as OutgoingMiddleware);
+    return this;
+  }
+
+  public route(
+    path: string | RegExp,
+    method: Method,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    if (path instanceof RegExp) {
+      this.regexRoutes.push({ path, responseHandler, method });
+      return this;
+    }
+
+    if (!path.startsWith("/")) throw Error("Routes must start with a slash");
+    if (this.applicationOptions.ignoreTrailingSlash) {
+      path = path.replace(/\/$/, "") + "/";
+    }
+
+    const usesURLParameters = /:[a-zA-Z]/.test(path);
+
+    this.routes[method.toUpperCase() + path] = {
+      path,
+      usesURLParameters,
+      urlParameterRegex: usesURLParameters
+        ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^/]*)"))
+        : undefined,
+      responseHandler,
+      options,
+      method,
+    };
+    return this;
+  }
+
+  public get(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    this.route(path, "GET", responseHandler, options);
+    return this;
+  }
+
+  public post(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    this.route(path, "POST", responseHandler, options);
+    return this;
+  }
+
+  public put(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    this.route(path, "PUT", responseHandler, options);
+    return this;
+  }
+
+  public patch(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    this.route(path, "PATCH", responseHandler, options);
+    return this;
+  }
+
+  public delete(
+    path: string | RegExp,
+    responseHandler: ResponseHandler,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    this.route(path, "DELETE", responseHandler, options);
+    return this;
+  }
+
+  public serve(
+    folder: string,
+    path: string,
+    options: RoutingOptions = {},
+  ): AquaContext {
+    if (!path.startsWith("/")) throw Error("Routes must start with a slash");
+
+    this.staticRoutes.push({
+      folder: folder.replace(/\/$/, "") + "/",
+      path: path.replace(/\/$/, "") + "/",
+      options,
+    });
+    return this;
+  }
+}
+
+export default class Aqua extends AquaContext {
+  protected groups: Record<string, AquaContext> = {};
+
+  constructor(port: number, applicationOptions: Options = {}) {
+    super({
+      applicationOptions,
+      options: { prefix: "/" },
     });
 
-    if (this.options.log) {
+    this.listen(port, {
+      onlyTls:
+        (applicationOptions?.tls && !applicationOptions.tls.independentPort) ||
+        applicationOptions?.tls?.independentPort === port,
+    });
+
+    if (this.applicationOptions.log) {
       console.log(`Server started (http://localhost:${port})`);
     }
   }
@@ -189,13 +332,13 @@ export default class Aqua {
   protected listen(port: number, { onlyTls }: { onlyTls: boolean }) {
     const listenerFns = [];
 
-    if (this.options.tls) {
+    if (this.applicationOptions.tls) {
       listenerFns.push(
         Deno.listenTls.bind(undefined, {
-          hostname: this.options.tls.hostname || "localhost",
-          certFile: this.options.tls.certFile || "./localhost.crt",
-          keyFile: this.options.tls.keyFile || "./localhost.key",
-          port: this.options.tls.independentPort || port,
+          hostname: this.applicationOptions.tls.hostname || "localhost",
+          certFile: this.applicationOptions.tls.certFile || "./localhost.crt",
+          keyFile: this.applicationOptions.tls.keyFile || "./localhost.key",
+          port: this.applicationOptions.tls.independentPort || port,
         }),
       );
     }
@@ -395,6 +538,7 @@ export default class Aqua {
     return defaultErrorResponse;
   }
 
+  // @TODO: replace functionality
   private async handleStaticRequest(
     req: Request,
     { path, folder }: { path: string; folder: string },
@@ -424,32 +568,72 @@ export default class Aqua {
   }
 
   protected async handleRequest(req: Request) {
-    if (this.options.ignoreTrailingSlash) {
+    if (this.applicationOptions.ignoreTrailingSlash) {
       req.url = req.url.replace(/\/$/, "") + "/";
     }
 
     req = await this.getIncomingRequestAfterApplyingMiddlewares(req);
 
-    const requestedPath = parseRequestPath(req.url);
+    let requestedPath = parseRequestPath(req.url);
 
-    if (this.options.log) {
+    let tryPath = requestedPath;
+    let group: AquaContext | null = null;
+    while (tryPath.length > 0) {
+      const normalizedPath = tryPath.replace(/\/[^\/]*$/, "") + "/";
+      const matchingGroup = this.groups[normalizedPath];
+
+      // root, if not overwritten
+      if (normalizedPath === "/" && !matchingGroup) {
+        group = this;
+        break;
+      }
+
+      if (!matchingGroup) {
+        tryPath = normalizedPath.replace(/\/$/, "");
+        continue;
+      }
+
+      group = matchingGroup;
+      break;
+    }
+
+    if (!group) {
+      req._internal.respond(
+        await this.getFallbackHandlerResponse(
+          req,
+          ErrorType.NotFound,
+          NOT_FOUND_RESPONSE,
+        ),
+      );
+      return;
+    }
+
+    if (this.applicationOptions.log) {
       console.log(
-        `\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath}\x1b[0m`,
+        `\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath} \x1b[33m(group: \x1b[0m${group.options.prefix}\x1b[33m)\x1b[0m`,
       );
     }
 
-    if (this.routes[req.method + requestedPath]) {
+    /**
+     * @example
+     * Prefix: /hello/
+     * Requested Path: /hello/world
+     * Result: /world
+     */
+    requestedPath = requestedPath.replace(group.options.prefix, "/");
+
+    if (group.routes[req.method + requestedPath]) {
       this.respondToRequest(
         req,
         requestedPath,
-        this.routes[req.method + requestedPath],
+        group!.routes[req.method + requestedPath],
       );
       return;
     }
 
     const matchingRouteWithURLParameters = findRouteWithMatchingURLParameters(
       requestedPath,
-      this.routes,
+      group.routes,
       req.method,
     );
 
@@ -465,7 +649,7 @@ export default class Aqua {
 
     const matchingRegexRoute = findMatchingRegexRoute(
       requestedPath,
-      this.regexRoutes,
+      group.regexRoutes,
       req.method,
     );
 
@@ -477,7 +661,7 @@ export default class Aqua {
     if (req.method === "GET") {
       const matchingStaticRoute = findMatchingStaticRoute(
         requestedPath,
-        this.staticRoutes,
+        group.staticRoutes,
       );
 
       if (matchingStaticRoute) {
@@ -495,113 +679,18 @@ export default class Aqua {
     );
   }
 
-  public provideFallback(responseHandler: FallbackHandler): Aqua {
-    this.fallbackHandler = responseHandler;
-    return this;
-  }
+  public group(
+    options: AquaContextOptions,
+    cb?: (context: AquaContext) => unknown | Promise<unknown>,
+  ): AquaContext {
+    options.prefix = options.prefix.replace(/\/$/, "") + "/";
 
-  public register<_, Type extends MiddlewareType = MiddlewareType.Outgoing>(
-    middleware: Type extends undefined ? OutgoingMiddleware
-      : Type extends MiddlewareType.Incoming ? IncomingMiddleware
-      : OutgoingMiddleware,
-    type?: Type,
-  ): Aqua {
-    if (type === MiddlewareType.Incoming) {
-      this.incomingMiddlewares.push(middleware as IncomingMiddleware);
-      return this;
-    }
-
-    this.outgoingMiddlewares.push(middleware as OutgoingMiddleware);
-    return this;
-  }
-
-  public route(
-    path: string | RegExp,
-    method: Method,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    if (path instanceof RegExp) {
-      this.regexRoutes.push({ path, responseHandler, method });
-      return this;
-    }
-
-    if (!path.startsWith("/")) throw Error("Routes must start with a slash");
-    if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
-
-    const usesURLParameters = /:[a-zA-Z]/.test(path);
-
-    this.routes[method.toUpperCase() + path] = {
-      path,
-      usesURLParameters,
-      urlParameterRegex: usesURLParameters
-        ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^/]*)"))
-        : undefined,
-      responseHandler,
+    const group = (this.groups[options.prefix] = new AquaContext({
+      applicationOptions: this.applicationOptions,
       options,
-      method,
-    };
-    return this;
-  }
+    }));
 
-  public get(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "GET", responseHandler, options);
-    return this;
-  }
-
-  public post(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "POST", responseHandler, options);
-    return this;
-  }
-
-  public put(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "PUT", responseHandler, options);
-    return this;
-  }
-
-  public patch(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "PATCH", responseHandler, options);
-    return this;
-  }
-
-  public delete(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "DELETE", responseHandler, options);
-    return this;
-  }
-
-  public serve(
-    folder: string,
-    path: string,
-    options: RoutingOptions = {},
-  ): Aqua {
-    if (!path.startsWith("/")) throw Error("Routes must start with a slash");
-    this.staticRoutes.push({
-      folder: folder.replace(/\/$/, "") + "/",
-      path: path.replace(/\/$/, "") + "/",
-      responseHandler: async (req) =>
-        await this.handleStaticRequest(req, { path, folder }),
-      options,
-    });
-    return this;
+    cb?.(group);
+    return group;
   }
 }
