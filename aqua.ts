@@ -22,12 +22,21 @@ export type Method =
   | "TRACE"
   | "PATCH";
 
+type ResponseContent =
+  | Uint8Array
+  | Blob
+  | BufferSource
+  | FormData
+  | URLSearchParams
+  | ReadableStream<Uint8Array>
+  | string;
+
 interface ContentResponse {
   statusCode?: number;
   headers?: Record<string, string>;
   cookies?: Record<string, string>;
   redirect?: string;
-  content: string | Uint8Array;
+  content: ResponseContent;
 }
 
 interface RedirectResponse {
@@ -35,11 +44,11 @@ interface RedirectResponse {
   headers?: Record<string, string>;
   cookies?: Record<string, string>;
   redirect: string;
-  content?: string | Uint8Array;
+  content?: ResponseContent;
 }
 
 export type ResponseObject = ContentResponse | RedirectResponse;
-export type Response = string | Uint8Array | ResponseObject;
+export type Response = ResponseContent | ResponseObject;
 
 export interface Request {
   _internal: {
@@ -237,23 +246,18 @@ export default class Aqua {
     return urlParameters;
   }
 
-  private isTextContent(response: Response): response is string {
-    return typeof response === "string";
-  }
-
-  private isDataContent(response: Response): response is Uint8Array {
-    return response instanceof Uint8Array;
-  }
-
   private convertResponseToResponseObject(response: Response): ResponseObject {
-    if (this.isTextContent(response)) {
+    if (typeof response === "string") {
       return {
         headers: { "Content-Type": "text/html; charset=UTF-8" },
         content: response,
       };
     }
 
-    if (this.isDataContent(response)) {
+    if (
+      typeof response !== "object" ||
+      (!("content" in response) && !("redirect" in response))
+    ) {
       return { content: response };
     }
 
