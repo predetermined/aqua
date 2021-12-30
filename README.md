@@ -95,7 +95,7 @@ outgoing or incoming request.
 ```typescript
 app.register((req, res) => {
   /**
-   * Skip Uint8Array responses:
+   * Ignore non-text responses:
    * if (typeof res.content !== "string") return res;
    *
    * res.content = res.content.replace("Hello", "Hi");
@@ -262,3 +262,32 @@ app.get("/", (req) => {
 ```
 
 Yes, that's it. Everything else should work as you are used to. :)
+
+### Streaming
+
+```typescript
+app.get("/", (req) => {
+  const stream = new ReadableStream({
+    start(controller) {
+      let i = 0;
+      const interval = setInterval(() => {
+        controller.enqueue(new TextEncoder().encode("hello world!"));
+
+        if (i === 9) {
+          clearInterval(interval);
+          controller.close();
+        }
+
+        i++;
+      }, 500);
+    }
+  });
+
+  return {
+    content: stream,
+    headers: {
+      "Content-Type": "text/html"
+    }
+  };
+});
+```
