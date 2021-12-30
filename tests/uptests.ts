@@ -655,6 +655,41 @@ registerTest("Fallback handler error types working?", async () => {
   }
 });
 
+registerTest("Are ReadableStream responses working?", async () => {
+  app.get("/readable-stream", (_req) => {
+    const stream = new ReadableStream({
+      start(controller) {
+        let i = 0;
+        const interval = setInterval(() => {
+          controller.enqueue(new TextEncoder().encode("hello world!"));
+
+          if (i === 4) {
+            clearInterval(interval);
+            controller.close();
+          }
+
+          i++;
+        }, 50);
+      },
+    });
+
+    return {
+      content: stream,
+      headers: {
+        "Content-Type": "text/html",
+      },
+    };
+  });
+
+  const content = await requestContent("/readable-stream");
+  const expected = "hello world!".repeat(5);
+  if (content !== expected) {
+    throw new Error(
+      `Expected handler to return "${expected}". Instead got: ${content}`,
+    );
+  }
+});
+
 setInterval(() => {
   if (registeredTests === solvedTests) Deno.exit(0);
 }, 500);
