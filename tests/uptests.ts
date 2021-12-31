@@ -65,10 +65,10 @@ registerTest("Outgoing middlewares working?", async () => {
 });
 
 registerTest("Incoming middlewares working?", async () => {
-  app.get("/incoming-middlewares", (req) => req.query.test);
+  app.get("/incoming-middlewares", (req) => req.custom.get("test") as string);
   app.register((req) => {
     if (req.url === "/incoming-middlewares") {
-      req.query = { test: "Wow, it works!" };
+      req.custom.set("test", "Wow, it works!");
     }
     return req;
   }, MiddlewareType.Incoming);
@@ -454,21 +454,21 @@ registerTest("File uploading with multiple files working?", async () => {
   }
 });
 
-registerTest("mustExist function working?", async () => {
+registerTest("mustExist function working?", () => {
   const schemaContext = { test: 1 };
   if (!mustExist("test").bind(schemaContext)(schemaContext)) {
     throw Error("mustExist function returned wrong value");
   }
 });
 
-registerTest("mustExist function working if key not found?", async () => {
+registerTest("mustExist function working if key not found?", () => {
   const schemaContext = { test2: 1 };
   if (mustExist("test").bind(schemaContext)(schemaContext)) {
     throw Error("mustExist function returned wrong value");
   }
 });
 
-registerTest("valueMustBeByType function working?", async () => {
+registerTest("valueMustBeByType function working?", () => {
   const schemaContext = { test: 1 };
   if (!valueMustBeOfType("test", "number").bind(schemaContext)(schemaContext)) {
     throw Error("valueMustBeByType function returned wrong value");
@@ -477,7 +477,7 @@ registerTest("valueMustBeByType function working?", async () => {
 
 registerTest(
   "valueMustBeByType function working if key not found?",
-  async () => {
+  () => {
     const schemaContext = { test2: "test" };
     if (
       valueMustBeOfType("test", "string").bind(schemaContext)(schemaContext)
@@ -489,7 +489,7 @@ registerTest(
 
 registerTest(
   "valueMustBeByType function working if key value has a different type?",
-  async () => {
+  () => {
     const schemaContext = { test: false };
     if (
       valueMustBeOfType("test", "string").bind(schemaContext)(schemaContext)
@@ -690,6 +690,39 @@ registerTest("Are ReadableStream responses working?", async () => {
   }
 });
 
-setInterval(() => {
-  if (registeredTests === solvedTests) Deno.exit(0);
-}, 500);
+registerTest("Accessing body through getter", async () => {
+  const url = "/payload-getter-parsing";
+
+  app.post(url, (req) => {
+    const steps = [];
+
+    req._internal.parsedBody = { body: { hello: "first" }, files: {} };
+    steps.push(req.body.hello);
+
+    req._internal.parsedBody = null;
+    steps.push(req._internal.parsedBody);
+    steps.push(req.body.hello);
+    steps.push(req._internal.parsedBody);
+
+    return JSON.stringify(
+      steps,
+    );
+  });
+
+  const content = await requestContent(url, {
+    method: "post",
+    body: JSON.stringify({
+      hello: "world",
+      world: "hello",
+    }),
+  });
+
+  const expected = ["first", null, "world", {
+    "body": { "hello": "world", "world": "hello" },
+    "files": {},
+  }];
+
+  if (content !== JSON.stringify(expected)) {
+    throw new Error(`Expected ${expected}, got ${content}`);
+  }
+});
