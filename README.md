@@ -291,3 +291,19 @@ app.get("/", (req) => {
   };
 });
 ```
+
+### Custom request information
+If you'd like to store additional information on the request object,
+you can use the `custom` property to do so.
+```typescript
+type RequestCustomType = { customerId: number; };
+
+app.register((req) => {
+  req.custom.customerId = getCustomerId();
+  return req;
+}, MiddlewareType.Incoming);
+
+app.get<RequestCustomType>("/customer-id", (req) => {
+  return req.custom.customerId.toString();
+});
+```
