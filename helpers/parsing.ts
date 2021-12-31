@@ -1,9 +1,14 @@
-import { Json, textDecoder, textEncoder } from "../shared.ts";
+import { Json } from "../shared.ts";
 
-export function parseBody(buffer: Uint8Array): {
+const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
+
+export interface ParseBodyResult {
   body: Record<string, Json>;
   files: Record<string, File>;
-} {
+}
+
+export function parseBody(buffer: Uint8Array): ParseBodyResult {
   const rawBody: string = textDecoder.decode(buffer);
   let body: Record<string, Json> = {};
 

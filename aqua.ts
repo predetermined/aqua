@@ -1,8 +1,6 @@
-import {
-  getAquaRequestFromNativeRequest,
-  getFinalizedStatusCode,
-  Json,
-} from "./shared.ts";
+import { Json } from "./shared.ts";
+import { getFinalizedStatusCode } from "./helpers/response_building.ts";
+import { getAquaRequestFromNativeRequest } from "./helpers/conversion.ts";
 import {
   findMatchingRegexRoute,
   findMatchingStaticRoute,
@@ -10,6 +8,7 @@ import {
   parseRequestPath,
 } from "./helpers/routing.ts";
 import { getContentType } from "./helpers/content_identification.ts";
+import { ParseBodyResult } from "./helpers/parsing.ts";
 
 export type Method =
   | "GET"
@@ -50,8 +49,11 @@ interface RedirectResponse {
 export type ResponseObject = ContentResponse | RedirectResponse;
 export type Response = ResponseContent | ResponseObject;
 
-export interface Request {
+export interface Request<
+  RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+> {
   _internal: {
+    parsedBody: null | ParseBodyResult;
     respond(res: ResponseObject): void;
   };
   raw: Deno.RequestEvent["request"];
@@ -65,15 +67,23 @@ export interface Request {
   parameters: Record<string, string>;
   matches: string[];
   conn?: Deno.Conn;
+  /** This property can be used to store addition request information. */
+  custom: RequestCustomType;
 }
 
-type OutgoingMiddleware = (
-  req: Request,
+type OutgoingMiddleware<
+  RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+> = (
+  req: Request<RequestCustomType>,
   res: ResponseObject,
 ) => Response | Promise<Response>;
-type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
+type IncomingMiddleware<
+  RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+> = (req: Request<RequestCustomType>) => Request | Promise<Request>;
 
-type ResponseHandler = (req: Request) => Response | Promise<Response>;
+type ResponseHandler<
+  RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+> = (req: Request<RequestCustomType>) => Response | Promise<Response>;
 
 export enum ErrorType {
   NotFound,
@@ -88,7 +98,8 @@ type FallbackHandler = (
 
 interface RouteTemplate {
   options?: RoutingOptions;
-  responseHandler: ResponseHandler;
+  // The `Request["custom"]` type doesn't matter for the internal handling
+  responseHandler: ResponseHandler<any>;
 }
 
 export interface StringRoute extends RouteTemplate {
@@ -182,6 +193,8 @@ export default class Aqua {
   private incomingMiddlewares: IncomingMiddleware[] = [];
   private outgoingMiddlewares: OutgoingMiddleware[] = [];
   private fallbackHandler: FallbackHandler | null = null;
+  private listeners: Deno.Listener[] = [];
+  private httpConnections: Deno.HttpConn[] = [];
 
   constructor(port: number, options?: Options) {
     this.options = options || {};
@@ -212,14 +225,24 @@ export default class Aqua {
     if (!onlyTls) listenerFns.push(Deno.listen.bind(undefined, { port }));
 
     for (const listenerFn of listenerFns) {
+      const listener = listenerFn();
+      this.listeners.push(listener);
+
       (async () => {
-        for await (const conn of listenerFn()) {
-          (async () => {
-            for await (const event of Deno.serveHttp(conn)) {
-              const req = await getAquaRequestFromNativeRequest(event, conn);
-              this.handleRequest(req);
-            }
-          })();
+        try {
+          for await (const conn of listener) {
+            (async () => {
+              const httpConn = Deno.serveHttp(conn);
+              this.httpConnections.push(httpConn);
+
+              for await (const event of httpConn) {
+                const req = await getAquaRequestFromNativeRequest(event, conn);
+                this.handleRequest(req);
+              }
+            })();
+          }
+        } catch (e) {
+          console.error("An error occurred while handling a connection:", e);
         }
       })();
     }
@@ -504,10 +527,14 @@ export default class Aqua {
     return this;
   }
 
-  public register<_, Type extends MiddlewareType = MiddlewareType.Outgoing>(
-    middleware: Type extends undefined ? OutgoingMiddleware
-      : Type extends MiddlewareType.Incoming ? IncomingMiddleware
-      : OutgoingMiddleware,
+  public register<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+    Type extends MiddlewareType = MiddlewareType.Outgoing,
+  >(
+    middleware: Type extends undefined ? OutgoingMiddleware<RequestCustomType>
+      : Type extends MiddlewareType.Incoming
+        ? IncomingMiddleware<RequestCustomType>
+      : OutgoingMiddleware<RequestCustomType>,
     type?: Type,
   ): Aqua {
     if (type === MiddlewareType.Incoming) {
@@ -519,10 +546,12 @@ export default class Aqua {
     return this;
   }
 
-  public route(
+  public route<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+  >(
     path: string | RegExp,
     method: Method,
-    responseHandler: ResponseHandler,
+    responseHandler: ResponseHandler<RequestCustomType>,
     options: RoutingOptions = {},
   ): Aqua {
     if (path instanceof RegExp) {
@@ -548,45 +577,55 @@ export default class Aqua {
     return this;
   }
 
-  public get(
+  public get<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+  >(
     path: string | RegExp,
-    responseHandler: ResponseHandler,
+    responseHandler: ResponseHandler<RequestCustomType>,
     options: RoutingOptions = {},
   ): Aqua {
     this.route(path, "GET", responseHandler, options);
     return this;
   }
 
-  public post(
+  public post<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+  >(
     path: string | RegExp,
-    responseHandler: ResponseHandler,
+    responseHandler: ResponseHandler<RequestCustomType>,
     options: RoutingOptions = {},
   ): Aqua {
     this.route(path, "POST", responseHandler, options);
     return this;
   }
 
-  public put(
+  public put<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+  >(
     path: string | RegExp,
-    responseHandler: ResponseHandler,
+    responseHandler: ResponseHandler<RequestCustomType>,
     options: RoutingOptions = {},
   ): Aqua {
     this.route(path, "PUT", responseHandler, options);
     return this;
   }
 
-  public patch(
+  public patch<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+  >(
     path: string | RegExp,
-    responseHandler: ResponseHandler,
+    responseHandler: ResponseHandler<RequestCustomType>,
     options: RoutingOptions = {},
   ): Aqua {
     this.route(path, "PATCH", responseHandler, options);
     return this;
   }
 
-  public delete(
+  public delete<
+    RequestCustomType extends Record<string, unknown> = Record<string, unknown>,
+  >(
     path: string | RegExp,
-    responseHandler: ResponseHandler,
+    responseHandler: ResponseHandler<RequestCustomType>,
     options: RoutingOptions = {},
   ): Aqua {
     this.route(path, "DELETE", responseHandler, options);
@@ -607,5 +646,20 @@ export default class Aqua {
       options,
     });
     return this;
+  }
+
+  /**
+   * Closes all listeners and active connections.
+   */
+  public close() {
+    for (const listener of this.listeners) {
+      listener.close();
+    }
+
+    for (const conn of this.httpConnections) {
+      try {
+        conn.close();
+      } catch {}
+    }
   }
 }
