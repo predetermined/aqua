@@ -1,4 +1,4 @@
-import type { Method, RegexRoute, StaticRoute, StringRoute } from "../aqua.ts";
+import type { Method, RegexRoute, StaticRoute, Route } from "../aqua.ts";
 
 export function parseRequestPath(url: string) {
   return url.replace(/(\?(.*))|(\#(.*))/, "");
@@ -6,13 +6,13 @@ export function parseRequestPath(url: string) {
 
 export function findRouteWithMatchingURLParameters(
   requestedPath: string,
-  routes: { [path: string]: StringRoute },
+  routes: { [path: string]: Route },
   method: Method,
-): StringRoute | undefined {
+): Route | undefined {
   return routes[
     Object.keys(routes).find((path: string) => {
       if (!path.includes(":")) return false;
-      const route: StringRoute = routes[path];
+      const route: Route = routes[path];
 
       return route.method === method &&
         requestedPath.replace(route.urlParameterRegex as RegExp, "")

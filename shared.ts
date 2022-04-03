@@ -1,7 +1,7 @@
 import {
   Method,
-  Request as AquaRequest,
-  ResponseObject as AquaResponseObject,
+  AquaRequest as AquaRequest,
+  AquaResponseObject as AquaResponseObject,
 } from "./aqua.ts";
 import { parseBody, parseCookies, parseQuery } from "./helpers/parsing.ts";
 
