@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         deno: ["v1.x", "nightly"]
@@ -20,5 +20,5 @@ jobs:
         with:
           deno-version: ${{ matrix.deno }}
 
-      - name: Run tests
-        run: deno test -A tests/uptests.ts
+      - name: tests/aqua
+        run: deno test -A tests/aqua.ts

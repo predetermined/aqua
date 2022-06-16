@@ -1,223 +1,166 @@
-import {
-  getAquaRequestFromNativeRequest,
-  getFinalizedStatusCode,
-  Json,
-} from "./shared.ts";
-import {
-  findMatchingRegexRoute,
-  findMatchingStaticRoute,
-  findRouteWithMatchingURLParameters,
-  parseRequestPath,
-} from "./helpers/routing.ts";
-import { getContentType } from "./helpers/content_identification.ts";
+export type AquaResponse = string | Response;
 
-export type Method =
-  | "GET"
-  | "HEAD"
-  | "POST"
-  | "PUT"
-  | "DELETE"
-  | "CONNECT"
-  | "OPTIONS"
-  | "TRACE"
-  | "PATCH";
+type RequestRespondFn = (response: AquaResponse) => void;
 
-type ResponseContent =
-  | Uint8Array
-  | Blob
-  | BufferSource
-  | FormData
-  | URLSearchParams
-  | ReadableStream<Uint8Array>
-  | string;
-
-interface ContentResponse {
-  statusCode?: number;
-  headers?: Record<string, string>;
-  cookies?: Record<string, string>;
-  redirect?: string;
-  content: ResponseContent;
-}
-
-interface RedirectResponse {
-  statusCode?: number;
-  headers?: Record<string, string>;
-  cookies?: Record<string, string>;
-  redirect: string;
-  content?: ResponseContent;
-}
-
-export type ResponseObject = ContentResponse | RedirectResponse;
-export type Response = ResponseContent | ResponseObject;
-
-export interface Request {
-  _internal: {
-    respond(res: ResponseObject): void;
-  };
-  raw: Deno.RequestEvent["request"];
-  url: string;
-  method: Method;
-  headers: Record<string, string>;
-  query: Record<string, string>;
-  body: Record<string, Json>;
-  files: Record<string, File>;
-  cookies: Record<string, string>;
-  parameters: Record<string, string>;
-  matches: string[];
+interface AquaRequestInternals {
+  respond: RequestRespondFn;
   conn?: Deno.Conn;
 }
 
-type OutgoingMiddleware = (
-  req: Request,
-  res: ResponseObject,
-) => Response | Promise<Response>;
-type IncomingMiddleware = (req: Request) => Request | Promise<Request>;
+export class AquaRequest extends Request {
+  public _internal = {} as AquaRequestInternals;
+  private _uint8Body: Uint8Array | Promise<Uint8Array>;
 
-type ResponseHandler = (req: Request) => Response | Promise<Response>;
+  constructor({
+    request,
+    respond,
+    conn,
+  }: {
+    request: Request;
+    respond(response: AquaResponse): void;
+    conn?: Deno.Conn;
+  }) {
+    super(request);
 
-export enum ErrorType {
-  NotFound,
-  SchemaMismatch,
-  ErrorThrownInResponseHandler,
-}
+    this._internal.respond = respond;
+    this._internal.conn = conn;
+    this._uint8Body = this.arrayBuffer().then((data) => {
+      this._uint8Body = new Uint8Array(data);
+      return this._uint8Body;
+    });
+  }
 
-type FallbackHandler = (
-  req: Request,
-  errorType: ErrorType,
-) => Response | Promise<Response> | null | Promise<null>;
-
-interface RouteTemplate {
-  options?: RoutingOptions;
-  responseHandler: ResponseHandler;
-}
-
-export interface StringRoute extends RouteTemplate {
-  path: string;
-  method: Method;
-  usesURLParameters: boolean;
-  urlParameterRegex?: RegExp;
-}
-
-export interface RegexRoute extends RouteTemplate {
-  path: RegExp;
-  method: Method;
-}
-
-export interface StaticRoute extends RouteTemplate {
-  folder: string;
-  path: string;
+  public get path() {
+    return new URL(this.url).pathname;
+  }
 }
 
 export interface Options {
-  ignoreTrailingSlash?: boolean;
-  log?: boolean;
-  tls?: {
-    independentPort?: number;
-    hostname?: string;
-    certFile: string;
-    keyFile: string;
+  port: number;
+  /**
+   * Uses your own listener provider functions instead of the default
+   * one.
+   * @default [(port: number) => Deno.listen({ port })]
+   */
+  customListenerProviders?: ((port: number) => Deno.Listener)[];
+}
+
+export enum Method {
+  GET = "GET",
+}
+
+export type StepFn<_Request extends AquaRequest> = (req: _Request) => _Request;
+export type RespondFn<_Request extends AquaRequest> = (
+  request: _Request
+) => AquaResponse | Promise<AquaResponse>;
+
+export interface RouteOptions<_Request extends AquaRequest> {
+  steps?: StepFn<_Request>[];
+}
+
+export interface BranchOptions<_Request extends AquaRequest>
+  extends Required<Pick<RouteOptions<_Request>, "steps">> {
+  path: string;
+  method: Method;
+  aquaInstance: Aqua;
+}
+
+export function parseRequestPath(url: string) {
+  return url.replace(/(\?(.*))|(\#(.*))/, "");
+}
+
+export class Branch<_Request extends AquaRequest> {
+  private options: BranchOptions<_Request>;
+  private steps: StepFn<_Request>[] = [];
+  private responder: RespondFn<_Request> | undefined;
+
+  public _internal = {
+    hasResponder: () => {
+      return !!this.responder;
+    },
+    respond: async (request: _Request) => {
+      for (const step of this.steps) {
+        request = step(request);
+      }
+
+      request._internal.respond!(await this.responder!(request));
+    },
   };
-}
 
-export type RoutingSchemaValidationFunction<Context> = (
-  this: Context,
-  context: Context,
-) => boolean | Promise<boolean>;
-
-type RoutingSchemaKeys =
-  | "body"
-  | "query"
-  | "cookies"
-  | "parameters"
-  | "headers";
-
-type RoutingSchema = {
-  [requestKey in RoutingSchemaKeys]?: RoutingSchemaValidationFunction<
-    Request[requestKey]
-  >[];
-};
-
-export interface RoutingOptions {
-  schema?: RoutingSchema;
-}
-
-export enum MiddlewareType {
-  Incoming = "Incoming",
-  Outgoing = "Outgoing",
-}
-
-const NOT_FOUND_RESPONSE = { statusCode: 404, content: "Not found." };
-
-export function mustExist(
-  key: string,
-): RoutingSchemaValidationFunction<Record<string, unknown>> {
-  return function () {
-    return Object.keys(this).includes(key);
-  };
-}
-
-export function valueMustBeOfType(
-  key: string,
-  type: "string" | "number" | "boolean" | "object" | "undefined",
-): RoutingSchemaValidationFunction<Record<string, unknown>> {
-  return function () {
-    return Object.keys(this).includes(key) && typeof this[key] === type;
-  };
-}
-
-export function mustContainValue(
-  key: string,
-  values: unknown[],
-): RoutingSchemaValidationFunction<Record<string, unknown>> {
-  return function () {
-    return Object.keys(this).includes(key) && values.includes(this[key]);
-  };
-}
-
-export default class Aqua {
-  protected readonly options: Options = {};
-  private routes: Record<string, StringRoute> = {};
-  private regexRoutes: RegexRoute[] = [];
-  private staticRoutes: StaticRoute[] = [];
-  private incomingMiddlewares: IncomingMiddleware[] = [];
-  private outgoingMiddlewares: OutgoingMiddleware[] = [];
-  private fallbackHandler: FallbackHandler | null = null;
-
-  constructor(port: number, options?: Options) {
-    this.options = options || {};
-    this.listen(port, {
-      onlyTls: (options?.tls && !options.tls.independentPort) ||
-        options?.tls?.independentPort === port,
-    });
-
-    if (this.options.log) {
-      console.log(`Server started (http://localhost:${port})`);
-    }
+  constructor(options: BranchOptions<_Request>) {
+    this.steps = options.steps;
+    this.options = options;
   }
 
-  protected listen(port: number, { onlyTls }: { onlyTls: boolean }) {
-    const listenerFns = [];
+  public step<_StepFn extends StepFn<_Request>>(
+    stepFn: _StepFn
+  ): Branch<ReturnType<_StepFn>> {
+    this.steps.push(stepFn);
+    return this as unknown as Branch<ReturnType<_StepFn>>;
+  }
 
-    if (this.options.tls) {
-      listenerFns.push(
-        Deno.listenTls.bind(undefined, {
-          hostname: this.options.tls.hostname || "localhost",
-          certFile: this.options.tls.certFile || "./localhost.crt",
-          keyFile: this.options.tls.keyFile || "./localhost.key",
-          port: this.options.tls.independentPort || port,
-        }),
-      );
-    }
+  public respond(responder: RespondFn<_Request>) {
+    this.responder = responder;
+  }
 
-    if (!onlyTls) listenerFns.push(Deno.listen.bind(undefined, { port }));
+  public route(path: string, method: Method, options: RouteOptions<_Request>) {
+    return this.options.aquaInstance.route<_Request>(
+      this.options.path + path,
+      method,
+      {
+        steps: [...this.steps, ...(options?.steps ?? [])],
+      }
+    );
+  }
+}
 
-    for (const listenerFn of listenerFns) {
+export class Aqua {
+  private readonly options: Options;
+  protected routes: Record<string, Branch<any>> = {};
+
+  constructor(options: Options) {
+    this.options = options;
+    this.listen({
+      port: options.port,
+      customListenerProviders: options.customListenerProviders,
+    });
+  }
+
+  private getResponseFromAquaResponse(response: AquaResponse) {
+    return typeof response === "string" ? new Response(response) : response;
+  }
+
+  protected turnEventIntoRequest(
+    event: Deno.RequestEvent,
+    conn: Deno.Conn
+  ): AquaRequest {
+    return new AquaRequest({
+      request: event.request,
+      respond: (response) => {
+        event.respondWith(this.getResponseFromAquaResponse(response));
+      },
+      conn,
+    });
+  }
+
+  protected listen({
+    port,
+    customListenerProviders,
+  }: Pick<Options, "port" | "customListenerProviders">) {
+    const listenerProviders = customListenerProviders ?? [
+      () => Deno.listen({ port }),
+    ];
+
+    for (const listenerFn of listenerProviders) {
       (async () => {
-        for await (const conn of listenerFn()) {
+        for await (const conn of listenerFn(port)) {
           (async () => {
             for await (const event of Deno.serveHttp(conn)) {
-              const req = await getAquaRequestFromNativeRequest(event, conn);
-              this.handleRequest(req);
+              try {
+                this.handleRequest(this.turnEventIntoRequest(event, conn));
+              } catch (e) {
+                event.respondWith(new Response(e, { status: 500 }));
+              }
             }
           })();
         }
@@ -225,387 +168,44 @@ export default class Aqua {
     }
   }
 
-  private connectURLParameters(
-    route: StringRoute,
-    requestedPath: string,
-  ): Record<string, string> {
-    const urlParametersWithColon = route.path.match(/:([a-zA-Z0-9_]*)/g) ?? [];
-    const urlParameters: Record<string, string> = {};
-    const slashSplittedRoutePath = route.path.split("/");
-    const slashSplittedRequestedPath = requestedPath.split("/");
+  private handleRequest(request: AquaRequest) {
+    const route = this.routes[request.method.toUpperCase() + request.path];
 
-    for (const urlParameterWithColon of urlParametersWithColon) {
-      const indexPos = slashSplittedRoutePath.indexOf(urlParameterWithColon);
-      if (indexPos === -1) continue;
-      const value = slashSplittedRequestedPath[indexPos];
-
-      if (!value) continue;
-      urlParameters[urlParameterWithColon.slice(1)] = value;
-    }
-
-    return urlParameters;
-  }
-
-  private convertResponseToResponseObject(response: Response): ResponseObject {
-    if (typeof response === "string") {
-      return {
-        headers: { "Content-Type": "text/html; charset=UTF-8" },
-        content: response,
-      };
-    }
-
-    if (
-      typeof response !== "object" ||
-      (!("content" in response) && !("redirect" in response))
-    ) {
-      return { content: response };
-    }
-
-    return response;
-  }
-
-  private isRegexPath(path: string | RegExp): path is RegExp {
-    return path instanceof RegExp;
-  }
-
-  private async getOutgoingResponseAfterApplyingMiddlewares(
-    req: Request,
-    res: ResponseObject,
-  ): Promise<ResponseObject> {
-    let responseAfterMiddlewares: ResponseObject = res;
-    for (const middleware of this.outgoingMiddlewares) {
-      responseAfterMiddlewares = this.convertResponseToResponseObject(
-        await middleware(req, responseAfterMiddlewares),
-      );
-    }
-    return responseAfterMiddlewares;
-  }
-
-  private async getIncomingRequestAfterApplyingMiddlewares(req: Request) {
-    let requestAfterMiddleWares: Request = req;
-    for (const middleware of this.incomingMiddlewares) {
-      requestAfterMiddleWares = await middleware(req);
-    }
-    return requestAfterMiddleWares;
-  }
-
-  private async respondToRequest(
-    req: Request,
-    requestedPath: string,
-    route: StringRoute | RegexRoute | StaticRoute,
-    additionalResponseOptions: {
-      usesURLParameters?: boolean;
-      customResponseHandler?: ResponseHandler | undefined;
-    } = { usesURLParameters: false, customResponseHandler: undefined },
-  ) {
-    if (additionalResponseOptions.usesURLParameters) {
-      req.parameters = this.connectURLParameters(
-        route as StringRoute,
-        requestedPath,
-      );
-    }
-
-    if (route.options?.schema) {
-      let passedAllValidations = true;
-
-      routingSchemaIterator:
-      for (
-        const routingSchemaKey of Object.keys(
-          route.options.schema,
-        ) as RoutingSchemaKeys[]
-      ) {
-        for (
-          const validationFunction of (route.options.schema[
-            routingSchemaKey
-          ] || []) as RoutingSchemaValidationFunction<unknown>[]
-        ) {
-          const schemaContext = req[routingSchemaKey];
-          if (!(await validationFunction.bind(schemaContext)(schemaContext))) {
-            passedAllValidations = false;
-            break routingSchemaIterator;
-          }
-        }
-      }
-
-      if (!passedAllValidations) {
-        req._internal.respond(
-          await this.getFallbackHandlerResponse(
-            req,
-            ErrorType.SchemaMismatch,
-            NOT_FOUND_RESPONSE,
-          ),
-        );
-        return;
-      }
-    }
-
-    if (this.isRegexPath(route.path)) {
-      req.matches = (requestedPath.match(route.path) as string[]).slice(1) ||
-        [];
-    }
-
-    try {
-      const formattedResponse = this.convertResponseToResponseObject(
-        await (additionalResponseOptions.customResponseHandler
-          ? additionalResponseOptions.customResponseHandler(req)
-          : (route as StringRoute | RegexRoute).responseHandler(req)),
-      );
-
-      const responseAfterMiddlewares = await this
-        .getOutgoingResponseAfterApplyingMiddlewares(
-          req,
-          formattedResponse,
-        );
-
-      req._internal.respond(responseAfterMiddlewares);
-    } catch (error) {
-      req._internal.respond(
-        await this.getFallbackHandlerResponse(
-          req,
-          ErrorType.ErrorThrownInResponseHandler,
-          { statusCode: 500, content: String(error) },
-        ),
-      );
-    }
-  }
-
-  private async getFallbackHandlerResponse(
-    req: Request,
-    errorType: ErrorType,
-    defaultErrorResponse: ResponseObject,
-  ): Promise<ResponseObject> {
-    if (this.fallbackHandler) {
-      const fallbackHandlerResponse = await this.fallbackHandler(
-        req,
-        errorType,
-      );
-
-      if (!fallbackHandlerResponse) {
-        return defaultErrorResponse;
-      }
-
-      const fallbackResponse = this.convertResponseToResponseObject(
-        fallbackHandlerResponse,
-      );
-
-      return {
-        statusCode: getFinalizedStatusCode(fallbackResponse, 404),
-        headers: fallbackResponse.headers,
-        content: fallbackResponse.content ||
-          "No fallback response content provided.",
-      };
-    }
-
-    return defaultErrorResponse;
-  }
-
-  private async handleStaticRequest(
-    req: Request,
-    { path, folder }: { path: string; folder: string },
-  ): Promise<Response> {
-    const requestedPath = parseRequestPath(req.url);
-    const resourcePath: string = requestedPath.replace(path, "");
-    const extension: string = resourcePath.replace(
-      /.*(?=\.[a-zA-Z0-9_]*$)/,
-      "",
-    );
-    const contentType: string | null = extension
-      ? getContentType(extension)
-      : null;
-
-    try {
-      return {
-        headers: contentType ? { "Content-Type": contentType } : undefined,
-        content: await Deno.readFile(folder + resourcePath),
-      };
-    } catch {
-      return await this.getFallbackHandlerResponse(
-        req,
-        ErrorType.NotFound,
-        NOT_FOUND_RESPONSE,
-      );
-    }
-  }
-
-  protected async handleRequest(req: Request) {
-    if (this.options.ignoreTrailingSlash) {
-      req.url = req.url.replace(/\/$/, "") + "/";
-    }
-
-    req = await this.getIncomingRequestAfterApplyingMiddlewares(req);
-
-    const requestedPath = parseRequestPath(req.url);
-
-    if (this.options.log) {
-      console.log(
-        `\x1b[33m${req.method} \x1b[0m(\x1b[36mIncoming\x1b[0m) \x1b[0m${requestedPath}\x1b[0m`,
-      );
-    }
-
-    if (this.routes[req.method + requestedPath]) {
-      this.respondToRequest(
-        req,
-        requestedPath,
-        this.routes[req.method + requestedPath],
-      );
+    if (!route || !route._internal.hasResponder()) {
+      request._internal.respond(new Response("Not found.", { status: 404 }));
       return;
     }
 
-    const matchingRouteWithURLParameters = findRouteWithMatchingURLParameters(
-      requestedPath,
-      this.routes,
-      req.method,
-    );
-
-    if (matchingRouteWithURLParameters) {
-      this.respondToRequest(
-        req,
-        requestedPath,
-        matchingRouteWithURLParameters,
-        { usesURLParameters: true },
-      );
-      return;
-    }
-
-    const matchingRegexRoute = findMatchingRegexRoute(
-      requestedPath,
-      this.regexRoutes,
-      req.method,
-    );
-
-    if (matchingRegexRoute) {
-      this.respondToRequest(req, requestedPath, matchingRegexRoute);
-      return;
-    }
-
-    if (req.method === "GET") {
-      const matchingStaticRoute = findMatchingStaticRoute(
-        requestedPath,
-        this.staticRoutes,
-      );
-
-      if (matchingStaticRoute) {
-        this.respondToRequest(req, requestedPath, matchingStaticRoute);
-        return;
-      }
-    }
-
-    req._internal.respond(
-      await this.getFallbackHandlerResponse(
-        req,
-        ErrorType.NotFound,
-        NOT_FOUND_RESPONSE,
-      ),
-    );
+    route._internal.respond(request);
   }
 
-  public provideFallback(responseHandler: FallbackHandler): Aqua {
-    this.fallbackHandler = responseHandler;
-    return this;
-  }
-
-  public register<_, Type extends MiddlewareType = MiddlewareType.Outgoing>(
-    middleware: Type extends undefined ? OutgoingMiddleware
-      : Type extends MiddlewareType.Incoming ? IncomingMiddleware
-      : OutgoingMiddleware,
-    type?: Type,
-  ): Aqua {
-    if (type === MiddlewareType.Incoming) {
-      this.incomingMiddlewares.push(middleware as IncomingMiddleware);
-      return this;
-    }
-
-    this.outgoingMiddlewares.push(middleware as OutgoingMiddleware);
-    return this;
-  }
-
-  public route(
-    path: string | RegExp,
-    method: Method,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    if (path instanceof RegExp) {
-      this.regexRoutes.push({ path, responseHandler, method });
-      return this;
-    }
-
-    if (!path.startsWith("/")) throw Error("Routes must start with a slash");
-    if (this.options.ignoreTrailingSlash) path = path.replace(/\/$/, "") + "/";
-
-    const usesURLParameters = /:[a-zA-Z]/.test(path);
-
-    this.routes[method.toUpperCase() + path] = {
-      path,
-      usesURLParameters,
-      urlParameterRegex: usesURLParameters
-        ? new RegExp(path.replace(/:([a-zA-Z0-9_]*)/g, "([^/]*)"))
-        : undefined,
-      responseHandler,
-      options,
-      method,
-    };
-    return this;
-  }
-
-  public get(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "GET", responseHandler, options);
-    return this;
-  }
-
-  public post(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "POST", responseHandler, options);
-    return this;
-  }
-
-  public put(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "PUT", responseHandler, options);
-    return this;
-  }
-
-  public patch(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "PATCH", responseHandler, options);
-    return this;
-  }
-
-  public delete(
-    path: string | RegExp,
-    responseHandler: ResponseHandler,
-    options: RoutingOptions = {},
-  ): Aqua {
-    this.route(path, "DELETE", responseHandler, options);
-    return this;
-  }
-
-  public serve(
-    folder: string,
+  public route<_Request extends AquaRequest>(
     path: string,
-    options: RoutingOptions = {},
-  ): Aqua {
-    if (!path.startsWith("/")) throw Error("Routes must start with a slash");
-    this.staticRoutes.push({
-      folder: folder.replace(/\/$/, "") + "/",
-      path: path.replace(/\/$/, "") + "/",
-      responseHandler: async (req) =>
-        await this.handleStaticRequest(req, { path, folder }),
-      options,
+    method: Method,
+    options: RouteOptions<_Request> = {}
+  ): Branch<_Request> {
+    if (!path.startsWith("/")) {
+      throw new Error('Route paths must start with a "/".');
+    }
+
+    return (this.routes[method + path] = new Branch<_Request>({
+      path,
+      method,
+      aquaInstance: this,
+      steps: options.steps ?? [],
+    }));
+  }
+
+  public async fakeCall(request: Request): Promise<Response> {
+    return await new Promise((resolve) => {
+      this.handleRequest(
+        new AquaRequest({
+          request,
+          respond: (response) => {
+            resolve(this.getResponseFromAquaResponse(response));
+          },
+        })
+      );
     });
-    return this;
   }
 }
