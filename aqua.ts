@@ -114,9 +114,15 @@ export class Branch<_Request extends AquaRequest> {
   }
 }
 
-export class Aqua {
+export class Aqua<_Request extends AquaRequest = AquaRequest> {
   private readonly options: Options;
   protected routes: Record<string, Branch<any>> = {};
+
+  public static modify<
+    ModifyFn extends () => (...args: ConstructorParameters<typeof Aqua>) => Aqua
+  >(modifyFn: ModifyFn): ReturnType<ModifyFn> {
+    return modifyFn() as unknown as ReturnType<ModifyFn>;
+  }
 
   constructor(options: Options) {
     this.options = options;
@@ -179,16 +185,16 @@ export class Aqua {
     route._internal.respond(request);
   }
 
-  public route<_Request extends AquaRequest>(
+  public route<__Request extends _Request>(
     path: string,
     method: Method,
-    options: RouteOptions<_Request> = {}
-  ): Branch<_Request> {
+    options: RouteOptions<__Request> = {}
+  ): Branch<__Request> {
     if (!path.startsWith("/")) {
       throw new Error('Route paths must start with a "/".');
     }
 
-    return (this.routes[method + path] = new Branch<_Request>({
+    return (this.routes[method + path] = new Branch<__Request>({
       path,
       method,
       aquaInstance: this,
