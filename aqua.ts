@@ -118,12 +118,6 @@ export class Aqua<_Request extends AquaRequest = AquaRequest> {
   private readonly options: Options;
   protected routes: Record<string, Branch<any>> = {};
 
-  public static modify<
-    ModifyFn extends () => (...args: ConstructorParameters<typeof Aqua>) => Aqua
-  >(modifyFn: ModifyFn): ReturnType<ModifyFn> {
-    return modifyFn() as unknown as ReturnType<ModifyFn>;
-  }
-
   constructor(options: Options) {
     this.options = options;
     this.listen({
@@ -174,7 +168,7 @@ export class Aqua<_Request extends AquaRequest = AquaRequest> {
     }
   }
 
-  private handleRequest(request: AquaRequest) {
+  protected handleRequest(request: AquaRequest) {
     const route = this.routes[request.method.toUpperCase() + request.path];
 
     if (!route || !route._internal.hasResponder()) {
