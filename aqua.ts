@@ -33,6 +33,34 @@ export class AquaRequest extends Request {
   public get path() {
     return new URL(this.url).pathname;
   }
+
+  /**
+   * Extend the `AquaRequest` instance the way you like.
+   * Do not forget to to return it's value in a `step` function
+   * to stay type-safe.
+   *
+   * @example
+   * request.extend({ isAwesomeRequest: true });
+   *
+   * @example
+   * app
+   *  .route(...)
+   *  .step(request => {
+   *    if (!isValidRequest(request)) throw new AquaError(400, "No, no, no!");
+   *
+   *    return request.extend({ isAwesomeRequest: true });
+   *  })
+   *  .respond(...);
+   */
+  public extend<ExtensionObj extends Record<string, unknown>>(
+    extensionObj: ExtensionObj
+  ): AquaRequest & ExtensionObj {
+    for (const [key, value] of Object.entries(extensionObj)) {
+      this[key as keyof typeof this] = value as this[keyof this];
+    }
+
+    return this as AquaRequest & ExtensionObj;
+  }
 }
 
 export interface Options {
