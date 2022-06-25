@@ -416,7 +416,7 @@ export default class Aqua {
     try {
       return {
         headers: contentType ? { "Content-Type": contentType } : undefined,
-        content: await Deno.readFile(folder + resourcePath),
+        content: await Deno.readFile(`${folder}/${resourcePath}`),
       };
     } catch {
       return await this.getFallbackHandlerResponse(
