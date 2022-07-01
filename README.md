@@ -90,7 +90,7 @@ function mustExist(
 
 You can register middlewares, that will be able to adjust the response object,
 the following way. Thereby you can decide whether you would like to modify the
-outgoing or incoming request.
+outgoing or incoming request. The second argument is optional and defaults to "Outgoing".
 
 ```typescript
 app.register((req, res) => {
@@ -101,7 +101,7 @@ app.register((req, res) => {
    * res.content = res.content.replace("Hello", "Hi");
    */
   return res;
-}, MiddlewareType.Outgoing);
+}, "Outgoing");
 ```
 
 ```typescript
@@ -110,7 +110,7 @@ app.register((req) => {
    * req.query.hello = "world";
    */
   return req;
-}, MiddlewareType.Incoming);
+}, "Incoming");
 ```
 
 ## URL parameters
