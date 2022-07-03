@@ -69,7 +69,7 @@ export async function getAquaRequestFromNativeRequest(
     method: req.method.toUpperCase() as Method,
     headers: Object.fromEntries(req.headers),
     query: req.url.includes("?") ? parseQuery(req.url) : {},
-    cookies: req.headers.get("cookies") ? parseCookies(req.headers) : {},
+    cookies: parseCookies(req.headers),
     parameters: {},
     matches: [],
     conn,
