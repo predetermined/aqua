@@ -139,6 +139,7 @@ type RoutingSchema = {
 
 export interface RoutingOptions {
   schema?: RoutingSchema;
+  index?: string;
 }
 
 export enum MiddlewareType {
@@ -401,9 +402,9 @@ export default class Aqua {
 
   private async handleStaticRequest(
     req: Request,
-    { path, folder }: { path: string; folder: string },
+    { path, folder, index }: { path: string; folder: string, index?: string; },
   ): Promise<Response> {
-    const requestedPath = parseRequestPath(req.url);
+    let requestedPath = parseRequestPath(req.url);
     const resourcePath: string = requestedPath.replace(path, "");
     const extension: string = resourcePath.replace(
       /.*(?=\.[a-zA-Z0-9_]*$)/,
@@ -414,9 +415,14 @@ export default class Aqua {
       : null;
 
     try {
+
+      if(index !== "" && index !== undefined && index !== null){
+        requestedPath = index;
+      }
+
       return {
         headers: contentType ? { "Content-Type": contentType } : undefined,
-        content: await Deno.readFile(`${folder}/${resourcePath}`),
+        content: await Deno.readFile(`${folder}/${requestedPath}`),
       };
     } catch {
       return await this.getFallbackHandlerResponse(
@@ -602,8 +608,11 @@ export default class Aqua {
     this.staticRoutes.push({
       folder: folder.replace(/\/$/, "") + "/",
       path: path.replace(/\/$/, "") + "/",
-      responseHandler: async (req) =>
-        await this.handleStaticRequest(req, { path, folder }),
+      responseHandler: async (req) => {
+        
+        
+        return await this.handleStaticRequest(req, { path, folder, index: options.index });
+      },
       options,
     });
     return this;
