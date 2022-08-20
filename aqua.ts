@@ -1,67 +1,5 @@
-export type AquaResponse = string | Response;
-
-type RequestRespondFn = (response: AquaResponse) => void;
-
-interface AquaRequestInternals {
-  respond: RequestRespondFn;
-  conn?: Deno.Conn;
-}
-
-export class AquaRequest extends Request {
-  public _internal = {} as AquaRequestInternals;
-  private _uint8Body: Uint8Array | Promise<Uint8Array>;
-
-  constructor({
-    request,
-    respond,
-    conn,
-  }: {
-    request: Request;
-    respond(response: AquaResponse): void;
-    conn?: Deno.Conn;
-  }) {
-    super(request);
-
-    this._internal.respond = respond;
-    this._internal.conn = conn;
-    this._uint8Body = this.arrayBuffer().then((data) => {
-      this._uint8Body = new Uint8Array(data);
-      return this._uint8Body;
-    });
-  }
-
-  public get path() {
-    return new URL(this.url).pathname;
-  }
-
-  /**
-   * Extend the `AquaRequest` instance the way you like.
-   * Do not forget to to return it's value in a `step` function
-   * to stay type-safe.
-   *
-   * @example
-   * request.extend({ isAwesomeRequest: true });
-   *
-   * @example
-   * app
-   *  .route(...)
-   *  .step(request => {
-   *    if (!isValidRequest(request)) throw new AquaError(400, "No, no, no!");
-   *
-   *    return request.extend({ isAwesomeRequest: true });
-   *  })
-   *  .respond(...);
-   */
-  public extend<ExtensionObj extends Record<string, unknown>>(
-    extensionObj: ExtensionObj
-  ): AquaRequest & ExtensionObj {
-    for (const [key, value] of Object.entries(extensionObj)) {
-      this[key as keyof typeof this] = value as this[keyof this];
-    }
-
-    return this as AquaRequest & ExtensionObj;
-  }
-}
+export type AquaResponse = Response;
+export type AquaRequest = Request;
 
 export interface Options {
   port: number;
@@ -77,62 +15,78 @@ export enum Method {
   GET = "GET",
 }
 
-export type StepFn<_Request extends AquaRequest> = (req: _Request) => _Request;
-export type RespondFn<_Request extends AquaRequest> = (
-  request: _Request
-) => AquaResponse | Promise<AquaResponse>;
+export type StepFn<_Event extends Event> = (
+  event: _Event
+) => _Event | Promise<_Event>;
 
-export interface RouteOptions<_Request extends AquaRequest> {
-  steps?: StepFn<_Request>[];
+export type RespondFn<_Event extends Event> = (
+  event: _Event
+) => _Event["response"];
+
+export interface RouteOptions<_Event extends Event> {
+  steps?: StepFn<_Event>[];
 }
 
-export interface BranchOptions<_Request extends AquaRequest>
-  extends Required<Pick<RouteOptions<_Request>, "steps">> {
+export interface BranchOptions<_Event extends Event>
+  extends Required<Pick<RouteOptions<_Event>, "steps">> {
   path: string;
   method: Method;
   aquaInstance: Aqua;
+}
+
+export interface Event {
+  conn?: Deno.Conn;
+  request: Request;
+  response: Response;
+  // @TODO: decide whether to hide this function
+  /**
+   * Responds to the request with the currently set `response`.
+   */
+  end(): void;
 }
 
 export function parseRequestPath(url: string) {
   return url.replace(/(\?(.*))|(\#(.*))/, "");
 }
 
-export class Branch<_Request extends AquaRequest> {
-  private options: BranchOptions<_Request>;
-  private steps: StepFn<_Request>[] = [];
-  private responder: RespondFn<_Request> | undefined;
+export class Branch<_Event extends Event> {
+  private options: BranchOptions<_Event>;
+  private steps: StepFn<_Event>[] = [];
 
   public _internal = {
-    hasResponder: () => {
-      return !!this.responder;
-    },
-    respond: async (request: _Request) => {
+    respond: async (event: _Event) => {
       for (const step of this.steps) {
-        request = step(request);
+        event = await step(event);
       }
 
-      request._internal.respond!(await this.responder!(request));
+      event.end();
     },
   };
 
-  constructor(options: BranchOptions<_Request>) {
+  constructor(options: BranchOptions<_Event>) {
     this.steps = options.steps;
     this.options = options;
   }
 
-  public step<_StepFn extends StepFn<_Request>>(
-    stepFn: _StepFn
-  ): Branch<ReturnType<_StepFn>> {
+  public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
     this.steps.push(stepFn);
-    return this as unknown as Branch<ReturnType<_StepFn>>;
+    return this as unknown as Branch<Awaited<ReturnType<_StepFn>>>;
   }
 
-  public respond(responder: RespondFn<_Request>) {
-    this.responder = responder;
+  public respond<_RespondFn extends RespondFn<_Event>>(respondFn: _RespondFn) {
+    this.steps.push(async (event) => {
+      event.response = await respondFn(event);
+      return event;
+    });
+    return this as unknown as Branch<
+      _Event & {
+        response: Awaited<ReturnType<_RespondFn>>;
+      }
+    >;
   }
 
-  public route(path: string, method: Method, options: RouteOptions<_Request>) {
-    return this.options.aquaInstance.route<_Request>(
+  public route(path: string, method: Method, options: RouteOptions<_Event>) {
+    return this.options.aquaInstance.route<_Event>(
       this.options.path + path,
       method,
       {
@@ -142,7 +96,7 @@ export class Branch<_Request extends AquaRequest> {
   }
 }
 
-export class Aqua<_Request extends AquaRequest = AquaRequest> {
+export class Aqua<_Event extends Event = Event> {
   private readonly options: Options;
   protected routes: Record<string, Branch<any>> = {};
 
@@ -158,17 +112,19 @@ export class Aqua<_Request extends AquaRequest = AquaRequest> {
     return typeof response === "string" ? new Response(response) : response;
   }
 
-  protected turnEventIntoRequest(
+  protected createCustomEvent(
     event: Deno.RequestEvent,
     conn: Deno.Conn
-  ): AquaRequest {
-    return new AquaRequest({
-      request: event.request,
-      respond: (response) => {
-        event.respondWith(this.getResponseFromAquaResponse(response));
-      },
+  ): Event {
+    return {
       conn,
-    });
+      request: event.request,
+      response: new Response(),
+      end() {
+        const { body, ...init } = this.response;
+        event.respondWith(new Response(body, init));
+      },
+    };
   }
 
   protected listen({
@@ -185,7 +141,7 @@ export class Aqua<_Request extends AquaRequest = AquaRequest> {
           (async () => {
             for await (const event of Deno.serveHttp(conn)) {
               try {
-                this.handleRequest(this.turnEventIntoRequest(event, conn));
+                this.handleRequest(this.createCustomEvent(event, conn));
               } catch (e) {
                 event.respondWith(new Response(e, { status: 500 }));
               }
@@ -196,27 +152,32 @@ export class Aqua<_Request extends AquaRequest = AquaRequest> {
     }
   }
 
-  protected handleRequest(request: AquaRequest) {
-    const route = this.routes[request.method.toUpperCase() + request.path];
+  protected handleRequest(event: Event) {
+    const route =
+      this.routes[
+        event.request.method.toUpperCase() +
+          parseRequestPath(new URL(event.request.url).pathname)
+      ];
 
-    if (!route || !route._internal.hasResponder()) {
-      request._internal.respond(new Response("Not found.", { status: 404 }));
+    if (!route) {
+      event.response = new Response("Not found.", { status: 404 });
+      event.end();
       return;
     }
 
-    route._internal.respond(request);
+    route._internal.respond(event);
   }
 
-  public route<__Request extends _Request>(
+  public route<__Event extends _Event>(
     path: string,
     method: Method,
-    options: RouteOptions<__Request> = {}
-  ): Branch<__Request> {
+    options: RouteOptions<__Event> = {}
+  ): Branch<__Event> {
     if (!path.startsWith("/")) {
       throw new Error('Route paths must start with a "/".');
     }
 
-    return (this.routes[method + path] = new Branch<__Request>({
+    return (this.routes[method + path] = new Branch<__Event>({
       path,
       method,
       aquaInstance: this,
@@ -226,14 +187,14 @@ export class Aqua<_Request extends AquaRequest = AquaRequest> {
 
   public async fakeCall(request: Request): Promise<Response> {
     return await new Promise((resolve) => {
-      this.handleRequest(
-        new AquaRequest({
-          request,
-          respond: (response) => {
-            resolve(this.getResponseFromAquaResponse(response));
-          },
-        })
-      );
+      this.handleRequest({
+        request,
+        response: new Response(),
+        end() {
+          const { body, ...init } = this.response;
+          resolve(new Response(body, init));
+        },
+      });
     });
   }
 }
