@@ -17,7 +17,7 @@ export enum Method {
 
 export type StepFn<_Event extends Event> = (
   event: _Event
-) => _Event | Promise<_Event>;
+) => _Event | Promise<_Event> | void;
 
 export type RespondFn<_Event extends Event> = (
   event: _Event
@@ -38,14 +38,25 @@ export interface Event {
   conn?: Deno.Conn;
   request: Request;
   response: Response;
-  // @TODO: decide whether to hide this function
   /**
-   * Responds to the request with the currently set `response`.
+   * Responds to the event with the currently set `response`.
+   * This function should not be called multiple times.
    */
   end(): void;
+  [key: string]: unknown;
 }
 
-export function parseRequestPath(url: string) {
+interface InternalEvent extends Event {
+  _internal: {
+    hasResponded: boolean;
+  };
+}
+
+function getDefaultResponse() {
+  return new Response("Not found.", { status: 404 });
+}
+
+function parseRequestPath(url: string) {
   return url.replace(/(\?(.*))|(\#(.*))/, "");
 }
 
@@ -56,7 +67,9 @@ export class Branch<_Event extends Event> {
   public _internal = {
     respond: async (event: _Event) => {
       for (const step of this.steps) {
-        event = await step(event);
+        const returnedEvent = await step(event);
+        if (!returnedEvent) continue;
+        event = returnedEvent;
       }
 
       event.end();
@@ -70,7 +83,11 @@ export class Branch<_Event extends Event> {
 
   public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
     this.steps.push(stepFn);
-    return this as unknown as Branch<Awaited<ReturnType<_StepFn>>>;
+    return this as unknown as Branch<
+      Awaited<ReturnType<_StepFn>> extends _Event
+        ? Awaited<ReturnType<_StepFn>>
+        : _Event
+    >;
   }
 
   public respond<_RespondFn extends RespondFn<_Event>>(respondFn: _RespondFn) {
@@ -85,7 +102,11 @@ export class Branch<_Event extends Event> {
     >;
   }
 
-  public route(path: string, method: Method, options: RouteOptions<_Event>) {
+  public route(
+    path: string,
+    method: Method,
+    options: RouteOptions<_Event> = {}
+  ) {
     return this.options.aquaInstance.route<_Event>(
       this.options.path + path,
       method,
@@ -108,19 +129,21 @@ export class Aqua<_Event extends Event = Event> {
     });
   }
 
-  private getResponseFromAquaResponse(response: AquaResponse) {
-    return typeof response === "string" ? new Response(response) : response;
-  }
-
-  protected createCustomEvent(
+  protected createInternalEvent(
     event: Deno.RequestEvent,
     conn: Deno.Conn
-  ): Event {
+  ): InternalEvent {
     return {
+      _internal: {
+        hasResponded: false,
+      },
       conn,
       request: event.request,
-      response: new Response(),
+      response: getDefaultResponse(),
       end() {
+        if (this._internal.hasResponded) return;
+        this._internal.hasResponded = true;
+
         const { body, ...init } = this.response;
         event.respondWith(new Response(body, init));
       },
@@ -141,7 +164,7 @@ export class Aqua<_Event extends Event = Event> {
           (async () => {
             for await (const event of Deno.serveHttp(conn)) {
               try {
-                this.handleRequest(this.createCustomEvent(event, conn));
+                this.handleRequest(this.createInternalEvent(event, conn));
               } catch (e) {
                 event.respondWith(new Response(e, { status: 500 }));
               }
@@ -152,7 +175,7 @@ export class Aqua<_Event extends Event = Event> {
     }
   }
 
-  protected handleRequest(event: Event) {
+  protected handleRequest(event: InternalEvent) {
     const route =
       this.routes[
         event.request.method.toUpperCase() +
@@ -160,7 +183,6 @@ export class Aqua<_Event extends Event = Event> {
       ];
 
     if (!route) {
-      event.response = new Response("Not found.", { status: 404 });
       event.end();
       return;
     }
@@ -188,9 +210,15 @@ export class Aqua<_Event extends Event = Event> {
   public async fakeCall(request: Request): Promise<Response> {
     return await new Promise((resolve) => {
       this.handleRequest({
+        _internal: {
+          hasResponded: false,
+        },
         request,
-        response: new Response(),
+        response: getDefaultResponse(),
         end() {
+          if (this._internal.hasResponded) return;
+          this._internal.hasResponded = true;
+
           const { body, ...init } = this.response;
           resolve(new Response(body, init));
         },
