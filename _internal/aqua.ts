@@ -1,15 +1,40 @@
-import { serve, ServeInit } from "https://deno.land/std@0.185.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
 
-export type AquaResponse = Response;
-export type AquaRequest = Request;
+export type AquaOptionsCustomListenFn = ({
+  handlerFn,
+  abortSignal,
+}: {
+  handlerFn: (request: Request) => Response | Promise<Response>;
+  abortSignal: AbortSignal;
+}) => void | Promise<void>;
 
 export interface AquaOptions {
   /**
-   * These options will be forwarded to the std/http/server `serve` fn.
-   * [Further documentation](https://deno.land/std@0.185.0/http/server.ts?s=ServeInit)
-   * @todo abstract this further. Create an abort signal internally to and expose it through a `kill` fn.
+   * `listen` either takes options that will be passed
+   * to the std/http `serve` function, or a custom function
+   * that starts the listening process and makes use of
+   * Aqua's request handler function.
+   *
+   * @example
+   * {
+   *   port: 80
+   * }
+   *
+   * @example
+   * // `abortSignal` ignored for the sake of simplicity
+   * async ({ handlerFn, abortSignal }) => {
+   *   const conn = Deno.listen({ port: 80 });
+   *   const httpConn = Deno.serveHttp(await conn.accept());
+   *   const e = await httpConn.nextRequest();
+   *   if (e) e.respondWith(await handlerFn(e.request));
+   * }
    */
-  serve?: ServeInit;
+  listen?:
+    | {
+        port?: number;
+        hostname?: string;
+      }
+    | AquaOptionsCustomListenFn;
 }
 
 export enum Method {
@@ -134,19 +159,45 @@ export class Branch<_Event extends Event> {
 export class Aqua<_Event extends Event = Event> {
   // @todo Solve this `any` situation
   protected routes: Record<string, Branch<any>> = {};
+  private abortController: AbortController;
 
   constructor(options?: AquaOptions) {
-    this.listen(options?.serve);
+    this.abortController = new AbortController();
+
+    this.listen(options?.listen);
   }
 
-  protected async listen(serveInit: AquaOptions["serve"]) {
-    await serve(async (request) => {
+  protected async listen(listen: AquaOptions["listen"]) {
+    const handlerFn = async (request: Request) => {
       try {
         return await this.handleRequest(this.createInternalEvent(request));
       } catch (e) {
         return new Response(e, { status: 500 });
       }
-    }, serveInit);
+    };
+
+    if (typeof listen === "function") {
+      await listen({
+        handlerFn,
+        abortSignal: this.abortController.signal,
+      });
+      return;
+    }
+
+    await serve(
+      async (request) => {
+        try {
+          return await this.handleRequest(this.createInternalEvent(request));
+        } catch (e) {
+          return new Response(e, { status: 500 });
+        }
+      },
+      {
+        hostname: listen?.hostname,
+        port: listen?.port,
+        signal: this.abortController.signal,
+      }
+    );
   }
 
   protected createInternalEvent(request: Request): InternalEvent {
@@ -192,6 +243,10 @@ export class Aqua<_Event extends Event = Event> {
       aquaInstance: this,
       steps: options.steps ?? [],
     }));
+  }
+
+  public kill() {
+    this.abortController.abort();
   }
 
   public async fakeCall(request: Request): Promise<Response> {

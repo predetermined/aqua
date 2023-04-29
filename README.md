@@ -10,8 +10,8 @@ Aqua is a minimal and fast web framework.
 import { Aqua } from "...";
 
 const app = new Aqua({
-  serve: {
-    port: 3000,
+  listen: {
+    port: 80,
   },
 });
 

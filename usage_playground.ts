@@ -3,9 +3,16 @@
 import { Aqua, Method } from "./mod.ts";
 
 const app = new Aqua({
-  serve: {
-    port: 3000,
+  listen: {
+    port: 80,
   },
+});
+
+app.route("/kill", Method.GET).respond((_event) => {
+  setTimeout(() => {
+    app.kill();
+  }, 0);
+  return new Response("will do! " + new Date().toUTCString());
 });
 
 app.route("/", Method.GET).respond((_event) => {
