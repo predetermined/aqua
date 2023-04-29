@@ -78,3 +78,17 @@ e.route("/g", Method.GET)
   .respond((event) => {
     return new Response("isF: " + event.isF + "; isE: " + event.isE);
   });
+
+/**
+ * Something like this could be super cool:
+ * ```typescript
+ * const x = app.route("/");
+ *
+ * x.route("/", Method.GET).respond(...);
+ * x.route("/", Method.POST).respond(...);
+ * // or
+ * x.route(Method.GET).respond(...);
+ * x.route(Method.POST).respond(...);
+ * ```
+ */
+const _h = app.route("/h", Method.GET);
