@@ -1,1 +1,1 @@
-export * from "./_internal/aqua.ts";
+export * from "./lib/index.ts";

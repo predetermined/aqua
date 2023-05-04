@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
+import { ResponseError } from "./response-error.ts";
 
 export type AquaOptionsCustomListenFn = ({
   handlerFn,
@@ -179,8 +180,12 @@ export class Aqua<_Event extends Event = Event> {
     const handlerFn = async (request: Request) => {
       try {
         return await this.handleRequest(this.createInternalEvent(request));
-      } catch (e) {
-        return new Response(e, { status: 500 });
+      } catch (error) {
+        if (error instanceof ResponseError) {
+          return new Response(error.body, error.init);
+        }
+
+        return new Response(error, { status: 500 });
       }
     };
 
@@ -192,20 +197,11 @@ export class Aqua<_Event extends Event = Event> {
       return;
     }
 
-    await serve(
-      async (request) => {
-        try {
-          return await this.handleRequest(this.createInternalEvent(request));
-        } catch (e) {
-          return new Response(e, { status: 500 });
-        }
-      },
-      {
-        hostname: listen?.hostname,
-        port: listen?.port,
-        signal: this.abortController.signal,
-      }
-    );
+    await serve(handlerFn, {
+      hostname: listen?.hostname,
+      port: listen?.port,
+      signal: this.abortController.signal,
+    });
   }
 
   protected createInternalEvent(request: Request): InternalEvent {

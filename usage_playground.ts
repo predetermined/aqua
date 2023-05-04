@@ -1,6 +1,6 @@
 // @todo delete this file
 
-import { Aqua, Method } from "./mod.ts";
+import { Aqua, Method, ResponseError } from "./mod.ts";
 
 const app = new Aqua({
   listen: {
@@ -99,3 +99,15 @@ e.route("/g", Method.GET)
  * ```
  */
 const _h = app.route("/h", Method.GET);
+
+app.route("/i", Method.GET).respond(() => {
+  throw new ResponseError("uh oh, 400 in respond", {
+    status: 400,
+  });
+});
+
+app.route("/j", Method.GET).step(() => {
+  throw new ResponseError("uh oh, 400 in step", {
+    status: 400,
+  });
+});
