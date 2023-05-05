@@ -130,11 +130,11 @@ export class Branch<_Event extends Event> {
   public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
     this.steps.push(stepFn);
 
-    return this as unknown as Branch<
-      Awaited<ReturnType<_StepFn>> extends _Event
-        ? Awaited<ReturnType<_StepFn>>
-        : _Event
-    >;
+    return this as Awaited<ReturnType<_StepFn>> extends never
+      ? never
+      : Awaited<ReturnType<_StepFn>> extends _Event
+      ? Branch<Awaited<ReturnType<_StepFn>>>
+      : this;
   }
 
   public respond<_RespondFn extends RespondFn<_Event>>(respondFn: _RespondFn) {
