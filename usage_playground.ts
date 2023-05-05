@@ -101,13 +101,19 @@ e.route("/g", Method.GET)
 const _h = app.route("/h", Method.GET);
 
 app.route("/i", Method.GET).respond(() => {
-  throw new ResponseError("uh oh, 400 in respond", {
-    status: 400,
-  });
+  throw new ResponseError(
+    "something",
+    new Response("uh oh, 400 in respond", {
+      status: 400,
+    })
+  );
 });
 
 app.route("/j", Method.GET).step(() => {
-  throw new ResponseError("uh oh, 400 in step", {
-    status: 400,
-  });
+  throw new ResponseError(
+    "something",
+    new Response("uh oh, 400 in step", {
+      status: 400,
+    })
+  );
 });

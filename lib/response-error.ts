@@ -1,9 +1,6 @@
 export class ResponseError extends Error {
-  constructor(
-    public readonly body?: BodyInit,
-    public readonly init?: ResponseInit
-  ) {
-    super(typeof body === "string" ? body : "");
+  constructor(message: string, public readonly response: Response) {
+    super(message);
     this.name = "ResponseError";
   }
 }
