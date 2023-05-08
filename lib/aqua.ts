@@ -36,6 +36,10 @@ export interface AquaOptions {
         hostname?: string;
       }
     | AquaOptionsCustomListenFn;
+  /**
+   * @default false
+   */
+  shouldRepectTrailingSlash?: boolean;
 }
 
 export enum Method {
@@ -91,10 +95,6 @@ type InternalizedEvent<_Event extends Event> = _Event & InternalEvent;
 
 function getDefaultResponse() {
   return new Response("Not found.", { status: 404 });
-}
-
-function parseRequestPath(url: string) {
-  return url.replace(/(\?(.*))|(\#(.*))/, "");
 }
 
 export class Branch<_Event extends Event> {
@@ -170,7 +170,7 @@ export class Aqua<_Event extends Event = Event> {
   protected routes: Record<string, Branch<any>> = {};
   private abortController: AbortController;
 
-  constructor(options?: AquaOptions) {
+  constructor(private options?: AquaOptions) {
     this.abortController = new AbortController();
 
     this.listen(options?.listen);
@@ -219,11 +219,12 @@ export class Aqua<_Event extends Event = Event> {
   }
 
   protected async handleRequest(event: InternalEvent) {
-    const route =
-      this.routes[
-        event.request.method.toUpperCase() +
-          parseRequestPath(new URL(event.request.url).pathname)
-      ];
+    let pathName = new URL(event.request.url).pathname;
+    if (!this.options?.shouldRepectTrailingSlash && !pathName.endsWith("/")) {
+      pathName += "/";
+    }
+
+    const route = this.routes[event.request.method.toUpperCase() + pathName];
 
     if (!route) {
       return event.response;
