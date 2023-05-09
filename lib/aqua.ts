@@ -69,7 +69,6 @@ export interface RouteOptions<_Event extends Event> {
 export interface BranchOptions<_Event extends Event>
   extends Required<Pick<RouteOptions<_Event>, "steps">> {
   path: string;
-  method: Method;
   aquaInstance: Aqua;
 }
 
@@ -93,84 +92,142 @@ interface InternalEvent extends Event {
 
 type InternalizedEvent<_Event extends Event> = _Event & InternalEvent;
 
+interface AquaInternals<_Event extends Event> {
+  options: AquaOptions;
+  setRoute<__Event extends _Event>(
+    method: Method,
+    branch: Branch<__Event>
+  ): void;
+}
+
+interface BranchInternals<_Event extends Event> {
+  options: BranchOptions<_Event>;
+  path: string;
+  respond(event: InternalizedEvent<_Event>): Promise<Response>;
+}
+
+type BranchStepReturnType<
+  _Event extends Event,
+  _StepFn extends StepFn<_Event>,
+  This extends Branch<_Event> | ResponderBranch<_Event>
+> = Awaited<ReturnType<_StepFn>> extends never
+  ? never
+  : Awaited<ReturnType<_StepFn>> extends _Event
+  ? This extends ResponderBranch<_Event>
+    ? ResponderBranch<Awaited<ReturnType<_StepFn>>>
+    : Branch<Awaited<ReturnType<_StepFn>>>
+  : This;
+
 function getDefaultResponse() {
   return new Response("Not found.", { status: 404 });
 }
 
-export class Branch<_Event extends Event> {
-  private options: BranchOptions<_Event>;
+class Branch<_Event extends Event> {
   private steps: StepFn<_Event>[] = [];
 
-  public _internal = {
-    respond: async (event: InternalizedEvent<_Event>) => {
-      for (const step of this.steps) {
-        const returnedEvent = await step(event);
-
-        // Called `event.end()`. Ignore all further statements.
-        if (event._internal.hasCalledEnd) {
-          break;
-        }
-
-        if (!returnedEvent) {
-          continue;
-        }
-
-        event = returnedEvent as InternalizedEvent<_Event>;
-      }
-
-      return event.response;
-    },
-  };
+  public _internal: BranchInternals<_Event>;
 
   constructor(options: BranchOptions<_Event>) {
+    this._internal = {
+      options,
+      path: options.path,
+      respond: async (event: InternalizedEvent<_Event>) => {
+        for (const step of this.steps) {
+          const returnedEvent = await step(event);
+
+          // Called `event.end()`. Ignore all further statements.
+          if (event._internal.hasCalledEnd) {
+            break;
+          }
+
+          if (!returnedEvent) {
+            continue;
+          }
+
+          event = returnedEvent as InternalizedEvent<_Event>;
+        }
+
+        return event.response;
+      },
+    };
     this.steps = options.steps;
-    this.options = options;
+  }
+
+  public route(path: string, options: RouteOptions<_Event> = {}) {
+    if (!path.startsWith("/")) {
+      throw new Error('Route paths must start with a "/".');
+    }
+
+    const joinedPath = this._internal.options.path.replace(/\/$/, "") + path;
+
+    return this._internal.options.aquaInstance.route<_Event>(joinedPath, {
+      steps: [...this.steps, ...(options?.steps ?? [])],
+    });
+  }
+
+  public on(method: Method) {
+    this._internal.options.aquaInstance._internal.setRoute(method, this);
+    return new ResponderBranch<_Event>(this);
   }
 
   public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
     this.steps.push(stepFn);
 
-    return this as Awaited<ReturnType<_StepFn>> extends never
-      ? never
-      : Awaited<ReturnType<_StepFn>> extends _Event
-      ? Branch<Awaited<ReturnType<_StepFn>>>
-      : this;
+    return this as BranchStepReturnType<_Event, _StepFn, typeof this>;
+  }
+}
+
+/**
+ * Used for every operation after the `.on(...)` call.
+ */
+export class ResponderBranch<_Event extends Event>
+  implements Omit<Branch<_Event>, "route" | "on">
+{
+  get _internal() {
+    return this.branch._internal;
+  }
+
+  constructor(private branch: Branch<_Event>) {}
+
+  // @ts-expect-error: Returns `ResponderBranch` instead of `Branch`
+  public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
+    this.branch.step(stepFn);
+
+    return this as BranchStepReturnType<_Event, _StepFn, typeof this>;
   }
 
   public respond<_RespondFn extends RespondFn<_Event>>(respondFn: _RespondFn) {
-    this.steps.push(async (event) => {
+    this.branch.step(async (event) => {
       event.response = await respondFn(event);
       return event;
     });
 
-    return this as unknown as Branch<
+    return this as unknown as ResponderBranch<
       _Event & {
         response: Awaited<ReturnType<_RespondFn>>;
       }
     >;
   }
-
-  public route(
-    path: string,
-    method: Method,
-    options: RouteOptions<_Event> = {}
-  ) {
-    return this.options.aquaInstance.route<_Event>(
-      this.options.path + path,
-      method,
-      {
-        steps: [...this.steps, ...(options?.steps ?? [])],
-      }
-    );
-  }
 }
 
 export class Aqua<_Event extends Event = Event> {
-  // @todo Solve this `any` situation
-  protected routes: Record<string, Branch<any>> = {};
   private abortController: AbortController;
 
-  constructor(private options?: AquaOptions) {
+  // @todo Solve this `any` situation
+  protected routes: Record<string, Branch<any>> = {};
+
+  public _internal: AquaInternals<_Event>;
+
+  constructor(options: AquaOptions = {}) {
+    this._internal = {
+      options,
+      setRoute: <__Event extends _Event>(
+        method: Method,
+        branch: Branch<__Event>
+      ) => {
+        this.routes[method + branch._internal.path] = branch;
+      },
+    };
     this.abortController = new AbortController();
 
     this.listen(options?.listen);
@@ -220,7 +277,10 @@ export class Aqua<_Event extends Event = Event> {
 
   protected async handleRequest(event: InternalEvent) {
     let pathName = new URL(event.request.url).pathname;
-    if (!this.options?.shouldRepectTrailingSlash && !pathName.endsWith("/")) {
+    if (
+      !this._internal.options.shouldRepectTrailingSlash &&
+      !pathName.endsWith("/")
+    ) {
       pathName += "/";
     }
 
@@ -235,19 +295,24 @@ export class Aqua<_Event extends Event = Event> {
 
   public route<__Event extends _Event>(
     path: string,
-    method: Method,
     options: RouteOptions<__Event> = {}
   ): Branch<__Event> {
     if (!path.startsWith("/")) {
       throw new Error('Route paths must start with a "/".');
     }
 
-    return (this.routes[method + path] = new Branch<__Event>({
+    if (
+      !this._internal.options.shouldRepectTrailingSlash &&
+      !path.endsWith("/")
+    ) {
+      path += "/";
+    }
+
+    return new Branch<__Event>({
       path,
-      method,
       aquaInstance: this,
       steps: options.steps ?? [],
-    }));
+    });
   }
 
   public kill() {

@@ -6,6 +6,8 @@ Aqua is a minimal and fast web framework.
 
 ## Example usage
 
+### It starts easy,
+
 ```typescript
 import { Aqua } from "...";
 
@@ -15,7 +17,36 @@ const app = new Aqua({
   },
 });
 
-app.route("/", Method.GET).respond((_event) => {
-  return new Response("Hello, World!");
+app
+  .route("/")
+  .on(Method.GET)
+  .respond((_event) => {
+    return new Response("Hello, World!");
+  });
+```
+
+### ... and stays easy.
+
+```typescript
+const v1 = app.route("/v1").step(async (event) => {
+  if (!event.request.headers.has("X-Api-Key")) {
+    throw new ResponseError(
+      "Missing API key",
+      Response.json({ error: "MISSING_API_KEY" })
+    );
+  }
+
+  const user = await getUserByRequest(event.request);
+  //    ^ type User
+
+  return {
+    ...event,
+    user,
+  };
 });
+
+v1.route("/user")
+  .on(Method.GET)
+  .respond((event) => Response.json({ data: { user: event.user } }));
+//                                                        ^ type User
 ```

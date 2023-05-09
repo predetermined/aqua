@@ -1,6 +1,7 @@
 // @todo delete this file
 
-import { Aqua, Method, ResponseError } from "./mod.ts";
+import { ResponseError } from "./lib/response-error.ts";
+import { Aqua, Method } from "./mod.ts";
 
 const app = new Aqua({
   listen: {
@@ -8,112 +9,48 @@ const app = new Aqua({
   },
 });
 
-app.route("/kill", Method.GET).respond((_event) => {
-  setTimeout(() => {
-    app.kill();
-  }, 0);
-  return new Response("will do! " + new Date().toUTCString());
-});
-
-app.route("/", Method.GET).respond((_event) => {
-  console.log("EVENT!:", _event);
-  return new Response("hello!");
-});
-
 app
-  .route("/a", Method.GET)
-  .step((event) => {
-    return {
-      ...event,
-      isAuthorized: new URL(event.request.url).searchParams.has("test"),
-    };
-  })
-  .respond((event) => {
-    return new Response("isAuthorized: " + event.isAuthorized);
-  });
-
-app
-  .route("/b", Method.GET)
-  .step((event) => {
-    event.response = new Response("early end()");
-    event.end();
-    return event;
-  })
+  .route("/")
+  .on(Method.GET)
   .respond((_event) => {
-    return new Response("test");
+    return new Response("Hello, World!");
   });
 
-app
-  .route("/c", Method.GET)
-  .step((event) => {
-    return {
-      ...event,
-      isNested: true,
-    };
-  })
-  .route("/d", Method.GET)
-  .respond((event) => {
-    return new Response("isNested: " + event.isNested);
-  });
+// /v1
+const getUserByRequest = (_req: Request) => Promise.resolve({ name: "test" });
 
-const e = app
-  .route("/e", Method.GET)
-  .step((event) => {
-    return {
-      ...event,
-      isE: true,
-    };
-  })
-  .respond((_event) => new Response("just e"));
-e.route("/f", Method.GET)
-  .step((event) => {
-    return {
-      ...event,
-      isF: true,
-    };
-  })
-  .respond((event) => {
-    return new Response("isF: " + event.isF + "; isE: " + event.isE);
-  });
-e.route("/g", Method.GET)
-  .step((event) => {
-    return {
-      ...event,
-      isF: false,
-    };
-  })
-  .respond((event) => {
-    return new Response("isF: " + event.isF + "; isE: " + event.isE);
-  });
+const v1 = app.route("/v1").step(async (event) => {
+  if (!event.request.headers.has("X-Api-Key")) {
+    throw new ResponseError(
+      "Missing API key",
+      Response.json({ error: "MISSING_API_KEY" })
+    );
+  }
 
-/**
- * Something like this could be super cool:
- * ```typescript
- * const x = app.route("/");
- *
- * x.route("/", Method.GET).respond(...);
- * x.route("/", Method.POST).respond(...);
- * // or
- * x.route(Method.GET).respond(...);
- * x.route(Method.POST).respond(...);
- * ```
- */
-const _h = app.route("/h", Method.GET);
+  const user = await getUserByRequest(event.request);
+  //    ^ type User
 
-app.route("/i", Method.GET).respond(() => {
-  throw new ResponseError(
-    "something",
-    new Response("uh oh, 400 in respond", {
-      status: 400,
-    })
-  );
+  return {
+    ...event,
+    user,
+  };
 });
 
-app.route("/j", Method.GET).step(() => {
-  throw new ResponseError(
-    "something",
-    new Response("uh oh, 400 in step", {
-      status: 400,
-    })
-  );
+v1.route("/user")
+  .on(Method.GET)
+  .respond((event) => Response.json({ data: { user: event.user } }));
+//                                                        ^ type User
+
+// /test
+const test = app.route("/test").step((event) => {
+  console.log("/test global step");
+  return event;
 });
+
+test
+  .route("/1")
+  // @todo should this run even when there is no response provided?
+  .step((e) => (console.log("/test/1 before on"), e))
+  .on(Method.GET)
+  .step((e) => (console.log("/test/1 after on"), e))
+  .respond(() => new Response("all good!"));
