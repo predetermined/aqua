@@ -96,14 +96,14 @@ interface AquaInternals<_Event extends Event> {
   options: AquaOptions;
   setRoute<__Event extends _Event>(
     method: Method,
-    branch: Branch<__Event>
+    path: string,
+    steps: StepFn<__Event>[]
   ): void;
 }
 
 interface BranchInternals<_Event extends Event> {
   options: BranchOptions<_Event>;
   path: string;
-  respond(event: InternalizedEvent<_Event>): Promise<Response>;
 }
 
 type BranchStepReturnType<
@@ -131,24 +131,6 @@ class Branch<_Event extends Event> {
     this._internal = {
       options,
       path: options.path,
-      respond: async (event: InternalizedEvent<_Event>) => {
-        for (const step of this.steps) {
-          const returnedEvent = await step(event);
-
-          // Called `event.end()`. Ignore all further statements.
-          if (event._internal.hasCalledEnd) {
-            break;
-          }
-
-          if (!returnedEvent) {
-            continue;
-          }
-
-          event = returnedEvent as InternalizedEvent<_Event>;
-        }
-
-        return event.response;
-      },
     };
     this.steps = options.steps;
   }
@@ -175,18 +157,19 @@ class Branch<_Event extends Event> {
     method: Method,
     respondFn: _RespondFn
   ) {
-    this._internal.options.aquaInstance._internal.setRoute(method, this);
+    this._internal.options.aquaInstance._internal.setRoute(
+      method,
+      this._internal.path,
+      [
+        ...this.steps,
+        async (event: _Event) => {
+          event.response = await respondFn(event);
+          return event;
+        },
+      ]
+    );
 
-    this.step(async (event) => {
-      event.response = await respondFn(event);
-      return event;
-    });
-
-    return this as unknown as ResponderBranch<
-      _Event & {
-        response: Awaited<ReturnType<_RespondFn>>;
-      }
-    >;
+    return this;
   }
 }
 
@@ -213,8 +196,13 @@ export class ResponderBranch<_Event extends Event>
 export class Aqua<_Event extends Event = Event> {
   private abortController: AbortController;
 
-  // @todo Solve this `any` situation
-  protected routes: Record<string, Branch<any>> = {};
+  protected routes: Record<
+    string,
+    {
+      // @todo Solve this `any` situation
+      steps: StepFn<any>[];
+    }
+  > = {};
 
   public _internal: AquaInternals<_Event>;
 
@@ -223,9 +211,10 @@ export class Aqua<_Event extends Event = Event> {
       options,
       setRoute: <__Event extends _Event>(
         method: Method,
-        branch: Branch<__Event>
+        path: string,
+        steps: StepFn<__Event>[]
       ) => {
-        this.routes[method + branch._internal.path] = branch;
+        this.routes[method + path] = { steps };
       },
     };
     this.abortController = new AbortController();
@@ -290,7 +279,22 @@ export class Aqua<_Event extends Event = Event> {
       return event.response;
     }
 
-    return await route._internal.respond(event);
+    for (const step of route.steps) {
+      const returnedEvent = await step(event);
+
+      // Called `event.end()`. Ignore all further statements.
+      if (event._internal.hasCalledEnd) {
+        break;
+      }
+
+      if (!returnedEvent) {
+        continue;
+      }
+
+      event = returnedEvent as InternalizedEvent<_Event>;
+    }
+
+    return event.response;
   }
 
   public route<__Event extends _Event>(

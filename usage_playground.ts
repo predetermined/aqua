@@ -47,4 +47,5 @@ const test = app.route("/test").step((event) => {
 test
   .route("/1")
   .step((e) => (console.log("/test/1 step"), e))
-  .respond(Method.GET, () => new Response("all good!"));
+  .respond(Method.GET, () => new Response("GET"))
+  .respond(Method.POST, () => new Response("POST"));
