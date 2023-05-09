@@ -42,7 +42,8 @@ const v1 = app.route("/v1").step(async (event) => {
   };
 });
 
-v1.route("/user").respond(Method.GET, (event) =>
-  Response.json({ data: { user: event.user } })
-); //                                 ^ type User
+v1.route("/user").respond(Method.GET, (event) => {
+  return Response.json({ data: { user: event.user } });
+  //                                         ^ type User
+});
 ```
