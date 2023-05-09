@@ -165,39 +165,19 @@ class Branch<_Event extends Event> {
     });
   }
 
-  public on(method: Method) {
-    this._internal.options.aquaInstance._internal.setRoute(method, this);
-    return new ResponderBranch<_Event>(this);
-  }
-
   public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
     this.steps.push(stepFn);
 
     return this as BranchStepReturnType<_Event, _StepFn, typeof this>;
   }
-}
 
-/**
- * Used for every operation after the `.on(...)` call.
- */
-export class ResponderBranch<_Event extends Event>
-  implements Omit<Branch<_Event>, "route" | "on">
-{
-  get _internal() {
-    return this.branch._internal;
-  }
+  public respond<_RespondFn extends RespondFn<_Event>>(
+    method: Method,
+    respondFn: _RespondFn
+  ) {
+    this._internal.options.aquaInstance._internal.setRoute(method, this);
 
-  constructor(private branch: Branch<_Event>) {}
-
-  // @ts-expect-error: Returns `ResponderBranch` instead of `Branch`
-  public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
-    this.branch.step(stepFn);
-
-    return this as BranchStepReturnType<_Event, _StepFn, typeof this>;
-  }
-
-  public respond<_RespondFn extends RespondFn<_Event>>(respondFn: _RespondFn) {
-    this.branch.step(async (event) => {
+    this.step(async (event) => {
       event.response = await respondFn(event);
       return event;
     });
@@ -207,6 +187,26 @@ export class ResponderBranch<_Event extends Event>
         response: Awaited<ReturnType<_RespondFn>>;
       }
     >;
+  }
+}
+
+/**
+ * Used for every operation after the `.on(...)` call.
+ */
+export class ResponderBranch<_Event extends Event>
+  implements Omit<Branch<_Event>, "route" | "step">
+{
+  get _internal() {
+    return this.branch._internal;
+  }
+
+  constructor(private branch: Branch<_Event>) {}
+
+  public respond<_RespondFn extends RespondFn<_Event>>(
+    method: Method,
+    respondFn: _RespondFn
+  ) {
+    return this.branch.respond(method, respondFn);
   }
 }
 

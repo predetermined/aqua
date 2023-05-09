@@ -17,12 +17,9 @@ const app = new Aqua({
   },
 });
 
-app
-  .route("/")
-  .on(Method.GET)
-  .respond((_event) => {
-    return new Response("Hello, World!");
-  });
+app.route("/").respond(Method.GET, (_event) => {
+  return new Response("Hello, World!");
+});
 ```
 
 ### ... and stays easy.
@@ -45,8 +42,7 @@ const v1 = app.route("/v1").step(async (event) => {
   };
 });
 
-v1.route("/user")
-  .on(Method.GET)
-  .respond((event) => Response.json({ data: { user: event.user } }));
-//                                                        ^ type User
+v1.route("/user").respond(Method.GET, (event) =>
+  Response.json({ data: { user: event.user } })
+); //                                 ^ type User
 ```
