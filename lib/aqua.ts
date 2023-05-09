@@ -1,4 +1,7 @@
 import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
+import { Branch } from "./branch.ts";
+import { Event, InternalizedEvent } from "./event.ts";
+import { Method } from "./method.ts";
 import { ResponseError } from "./response-error.ts";
 
 export type AquaOptionsCustomListenFn = ({
@@ -42,18 +45,6 @@ export interface AquaOptions {
   shouldRepectTrailingSlash?: boolean;
 }
 
-export enum Method {
-  GET = "GET",
-  HEAD = "HEAD",
-  POST = "POST",
-  PUT = "PUT",
-  DELETE = "DELETE",
-  CONNECT = "CONNECT",
-  OPTIONS = "OPTIONS",
-  TRACE = "TRACE",
-  PATCH = "PATCH",
-}
-
 export type StepFn<_Event extends Event> = (
   event: _Event
 ) => _Event | Promise<_Event> | void;
@@ -66,32 +57,6 @@ export interface RouteOptions<_Event extends Event> {
   steps?: StepFn<_Event>[];
 }
 
-export interface BranchOptions<_Event extends Event>
-  extends Required<Pick<RouteOptions<_Event>, "steps">> {
-  path: string;
-  aquaInstance: Aqua;
-}
-
-export interface Event {
-  request: Request;
-  response: Response;
-  /**
-   * Responds to the event with the currently set `response`.
-   * This function should not be called multiple times.
-   * @todo Is there maybe a way to allow no statements after this fn has been called?
-   */
-  end(): void;
-  [key: string]: unknown;
-}
-
-interface InternalEvent extends Event {
-  _internal: {
-    hasCalledEnd: boolean;
-  };
-}
-
-type InternalizedEvent<_Event extends Event> = _Event & InternalEvent;
-
 interface AquaInternals<_Event extends Event> {
   options: AquaOptions;
   setRoute<__Event extends _Event>(
@@ -101,96 +66,8 @@ interface AquaInternals<_Event extends Event> {
   ): void;
 }
 
-interface BranchInternals<_Event extends Event> {
-  options: BranchOptions<_Event>;
-  path: string;
-}
-
-type BranchStepReturnType<
-  _Event extends Event,
-  _StepFn extends StepFn<_Event>,
-  This extends Branch<_Event> | ResponderBranch<_Event>
-> = Awaited<ReturnType<_StepFn>> extends never
-  ? never
-  : Awaited<ReturnType<_StepFn>> extends _Event
-  ? This extends ResponderBranch<_Event>
-    ? ResponderBranch<Awaited<ReturnType<_StepFn>>>
-    : Branch<Awaited<ReturnType<_StepFn>>>
-  : This;
-
-function getDefaultResponse() {
+export function getDefaultResponse() {
   return new Response("Not found.", { status: 404 });
-}
-
-class Branch<_Event extends Event> {
-  private steps: StepFn<_Event>[] = [];
-
-  public _internal: BranchInternals<_Event>;
-
-  constructor(options: BranchOptions<_Event>) {
-    this._internal = {
-      options,
-      path: options.path,
-    };
-    this.steps = options.steps;
-  }
-
-  public route(path: string, options: RouteOptions<_Event> = {}) {
-    if (!path.startsWith("/")) {
-      throw new Error('Route paths must start with a "/".');
-    }
-
-    const joinedPath = this._internal.options.path.replace(/\/$/, "") + path;
-
-    return this._internal.options.aquaInstance.route<_Event>(joinedPath, {
-      steps: [...this.steps, ...(options?.steps ?? [])],
-    });
-  }
-
-  public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
-    this.steps.push(stepFn);
-
-    return this as BranchStepReturnType<_Event, _StepFn, typeof this>;
-  }
-
-  public respond<_RespondFn extends RespondFn<_Event>>(
-    method: Method,
-    respondFn: _RespondFn
-  ) {
-    this._internal.options.aquaInstance._internal.setRoute(
-      method,
-      this._internal.path,
-      [
-        ...this.steps,
-        async (event: _Event) => {
-          event.response = await respondFn(event);
-          return event;
-        },
-      ]
-    );
-
-    return new ResponderBranch(this);
-  }
-}
-
-/**
- * Used for every operation after the `.on(...)` call.
- */
-export class ResponderBranch<_Event extends Event>
-  implements Omit<Branch<_Event>, "route" | "step">
-{
-  get _internal() {
-    return this.branch._internal;
-  }
-
-  constructor(private branch: Branch<_Event>) {}
-
-  public respond<_RespondFn extends RespondFn<_Event>>(
-    method: Method,
-    respondFn: _RespondFn
-  ) {
-    return this.branch.respond(method, respondFn);
-  }
 }
 
 export class Aqua<_Event extends Event = Event> {
@@ -250,7 +127,7 @@ export class Aqua<_Event extends Event = Event> {
     });
   }
 
-  protected createInternalEvent(request: Request): InternalEvent {
+  protected createInternalEvent(request: Request): InternalizedEvent<_Event> {
     return {
       _internal: {
         hasCalledEnd: false,
@@ -261,10 +138,10 @@ export class Aqua<_Event extends Event = Event> {
         if (this._internal.hasCalledEnd) return;
         this._internal.hasCalledEnd = true;
       },
-    };
+    } as InternalizedEvent<_Event>;
   }
 
-  protected async handleRequest(event: InternalEvent) {
+  protected async handleRequest(event: InternalizedEvent<_Event>) {
     let pathName = new URL(event.request.url).pathname;
     if (
       !this._internal.options.shouldRepectTrailingSlash &&
@@ -321,24 +198,5 @@ export class Aqua<_Event extends Event = Event> {
 
   public kill() {
     this.abortController.abort();
-  }
-
-  public async fakeCall(request: Request): Promise<Response> {
-    return await new Promise((resolve) => {
-      this.handleRequest({
-        _internal: {
-          hasCalledEnd: false,
-        },
-        request,
-        response: getDefaultResponse(),
-        end() {
-          if (this._internal.hasCalledEnd) return;
-          this._internal.hasCalledEnd = true;
-
-          const { body, ...init } = this.response;
-          resolve(new Response(body, init));
-        },
-      });
-    });
   }
 }
