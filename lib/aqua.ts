@@ -169,7 +169,7 @@ class Branch<_Event extends Event> {
       ]
     );
 
-    return this;
+    return new ResponderBranch(this);
   }
 }
 
