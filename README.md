@@ -29,7 +29,12 @@ const v1 = app.route("/v1").step(async (event) => {
   if (!event.request.headers.has("X-Api-Key")) {
     throw new ResponseError(
       "Missing API key",
-      Response.json({ error: "MISSING_API_KEY" })
+      Response.json(
+        { error: "MISSING_API_KEY" },
+        {
+          status: 400,
+        }
+      )
     );
   }
 
