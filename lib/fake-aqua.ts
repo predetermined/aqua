@@ -1,25 +1,13 @@
-import { Aqua, AquaOptions, getDefaultResponse } from "./aqua.ts";
+import { Aqua, AquaOptions } from "./aqua.ts";
 
 export class FakeAqua extends Aqua {
   constructor(options: AquaOptions = {}) {
     super(options);
   }
 
-  public async fakeCall(request: Request): Promise<Response> {
-    return await new Promise((resolve) => {
-      this.handleRequest({
-        _internal: {
-          hasCalledEnd: false,
-        },
-        request,
-        response: getDefaultResponse(),
-        end() {
-          if (this._internal.hasCalledEnd) return;
-          this._internal.hasCalledEnd = true;
+  protected async listen() {}
 
-          resolve(this.response);
-        },
-      });
-    });
+  public async fakeCall(request: Request): Promise<Response> {
+    return await this.handleRequest(this.createInternalEvent(request));
   }
 }
