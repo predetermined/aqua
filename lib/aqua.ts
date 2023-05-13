@@ -104,6 +104,8 @@ export class Aqua<_Event extends Event = Event> {
       try {
         return await this.handleRequest(this.createInternalEvent(request));
       } catch (error) {
+        console.error(error);
+
         if (error instanceof ResponseError) {
           return error.response;
         }
