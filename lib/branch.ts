@@ -38,6 +38,43 @@ export class Branch<_Event extends Event> {
     });
   }
 
+  /**
+   * Injects a function into the event lifecycle.
+   *
+   * @example
+   * // Check whether a header is set and throw otherwise
+   * .step((event) => {
+   *   if (!event.request.headers.has("X-Api-Key")) {
+   *     throw new ResponseError(
+   *       "Missing API key",
+   *       Response.json(
+   *         { error: "MISSING_API_KEY" },
+   *         {
+   *           status: 400,
+   *         }
+   *       )
+   *     );
+   *   }
+   * });
+   *
+   * @example
+   * // Early-return
+   * .step((event) => {
+   *   if (event.request.headers.has("early-return")) {
+   *     event.response = Response.json({ data: {} });
+   *     event.end();
+   *   }
+   * });
+   *
+   * @example
+   * // Provide additional event information
+   * .step((event) => {
+   *   return {
+   *     ...event,
+   *     isTesting: event.request.url.startsWith("http://localhost"),
+   *   };
+   * });
+   */
   public step<_StepFn extends StepFn<_Event>>(stepFn: _StepFn) {
     this.steps.push(stepFn);
 
@@ -48,6 +85,10 @@ export class Branch<_Event extends Event> {
       : this;
   }
 
+  /**
+   * @example
+   * .respond(Method.GET, (_event) => new Response("Hello, World!"));
+   */
   public respond<_RespondFn extends RespondFn<_Event>>(
     method: Method,
     respondFn: _RespondFn
@@ -69,7 +110,7 @@ export class Branch<_Event extends Event> {
 }
 
 /**
- * Used for every operation after the `.on(...)` call.
+ * Used for every after the first `respond(...)` call.
  */
 export class ResponderBranch<_Event extends Event>
   implements Omit<Branch<_Event>, "route" | "step">
@@ -80,6 +121,10 @@ export class ResponderBranch<_Event extends Event>
 
   constructor(private branch: Branch<_Event>) {}
 
+  /**
+   * @example
+   * .respond(Method.GET, (_event) => new Response("Hello, World!"));
+   */
   public respond<_RespondFn extends RespondFn<_Event>>(
     method: Method,
     respondFn: _RespondFn
