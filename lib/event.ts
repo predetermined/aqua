@@ -2,9 +2,18 @@ export interface Event {
   request: Request;
   response: Response;
   /**
-   * Responds to the event with the currently set `response`.
-   * This function should not be called multiple times.
-   * @todo Is there maybe a way to allow no statements after this fn has been called?
+   * Calling `end()` tells Aqua to respond to the event after running the
+   * current step function.
+   * Please make sure to return after calling `end()` to not accidentally modify
+   * the event response any further.
+   *
+   * @example
+   * .step((event) => {
+   *   if (event.request.headers.has("early-return")) {
+   *     event.response = Response.json({ data: {} });
+   *     return event.end();
+   *   }
+   * });
    */
   end(): void;
   [key: string]: unknown;

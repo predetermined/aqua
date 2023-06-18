@@ -1,6 +1,5 @@
 // @todo delete this file
 
-import { ResponseError } from "./lib/response-error.ts";
 import { Aqua, Method } from "./mod.ts";
 
 const app = new Aqua({
@@ -18,15 +17,13 @@ const getUserByRequest = (_req: Request) => Promise.resolve({ name: "test" });
 
 const v1 = app.route("/v1").step(async (event) => {
   if (!event.request.headers.has("X-Api-Key")) {
-    throw new ResponseError(
-      "Missing API key",
-      Response.json(
-        { error: "MISSING_API_KEY" },
-        {
-          status: 400,
-        }
-      )
+    event.response = Response.json(
+      { error: "MISSING_API_KEY" },
+      {
+        status: 400,
+      }
     );
+    return event.end();
   }
 
   const user = await getUserByRequest(event.request);

@@ -1,5 +1,5 @@
 import { assert } from "https://deno.land/std@0.192.0/testing/asserts.ts";
-import { FakeAqua, Method, ResponseError } from "./mod.ts";
+import { FakeAqua, Method } from "./mod.ts";
 
 Deno.test(async function notFound() {
   const app = new FakeAqua();
@@ -126,7 +126,7 @@ Deno.test(async function addCustomPropertyStep() {
   assert((await res.text()) === "bar");
 });
 
-Deno.test(async function throwResponseErrorInStep() {
+Deno.test(async function failEventInStep() {
   const app = new FakeAqua();
 
   app
@@ -135,12 +135,8 @@ Deno.test(async function throwResponseErrorInStep() {
       // just so it doesn't infer `never`
       if (event.request.headers.has("test")) return event;
 
-      throw new ResponseError(
-        "failed",
-        new Response("failed", {
-          status: 500,
-        })
-      );
+      event.response = new Response("failed", { status: 500 });
+      return event.end();
     })
     .respond(Method.GET, (_event) => new Response("succeeded"));
 

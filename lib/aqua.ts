@@ -2,7 +2,6 @@ import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
 import { Branch } from "./branch.ts";
 import { Event, InternalizedEvent } from "./event.ts";
 import { Method } from "./method.ts";
-import { ResponseError } from "./response-error.ts";
 
 export type AquaOptionsCustomListenFn = ({
   handlerFn,
@@ -47,7 +46,7 @@ export interface AquaOptions {
 
 export type StepFn<_Event extends Event> = (
   event: _Event
-) => _Event | Promise<_Event> | void;
+) => _Event | void | Promise<_Event | void>;
 
 export type RespondFn<_Event extends Event> = (
   event: _Event
@@ -105,10 +104,6 @@ export class Aqua<_Event extends Event = Event> {
         return await this.handleRequest(this.createInternalEvent(request));
       } catch (error) {
         console.error(error);
-
-        if (error instanceof ResponseError) {
-          return error.response;
-        }
 
         return new Response(error, { status: 500 });
       }

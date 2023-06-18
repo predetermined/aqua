@@ -45,15 +45,13 @@ export class Branch<_Event extends Event> {
    * // Check whether a header is set and throw otherwise
    * .step((event) => {
    *   if (!event.request.headers.has("X-Api-Key")) {
-   *     throw new ResponseError(
-   *       "Missing API key",
-   *       Response.json(
-   *         { error: "MISSING_API_KEY" },
-   *         {
-   *           status: 400,
-   *         }
-   *       )
+   *     event.response = Response.json(
+   *       { error: "MISSING_API_KEY" },
+   *       {
+   *         status: 400,
+   *       }
    *     );
+   *     return event.end();
    *   }
    * });
    *
@@ -62,7 +60,7 @@ export class Branch<_Event extends Event> {
    * .step((event) => {
    *   if (event.request.headers.has("early-return")) {
    *     event.response = Response.json({ data: {} });
-   *     event.end();
+   *     return event.end();
    *   }
    * });
    *
