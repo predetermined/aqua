@@ -108,7 +108,7 @@ export class Branch<_Event extends Event> {
 }
 
 /**
- * Used for every after the first `respond(...)` call.
+ * Used for everything after the first `respond(...)` call.
  */
 export class ResponderBranch<_Event extends Event>
   implements Omit<Branch<_Event>, "route" | "step">
