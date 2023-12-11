@@ -160,7 +160,7 @@ export class Aqua<_Event extends Event = Event> {
 
     if (!route) {
       // Try to find matching pattern if there was no direct match
-      const urlPatternTestPath = "http://0.0.0.0" + pathName;
+      const urlPatternTestPath = URL_PATTERN_PREFIX + pathName;
 
       for (const _route of Object.values(this.routes)) {
         if (_route.urlPattern.test(urlPatternTestPath)) {
