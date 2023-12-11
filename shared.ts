@@ -59,7 +59,7 @@ export async function getAquaRequestFromNativeRequest(
             status: getFinalizedStatusCode(res, 200),
             headers: getFinalizedHeaders(res),
           }),
-        );
+        ).catch((_e) => {});
       },
     },
     raw: req,
