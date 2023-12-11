@@ -1,5 +1,6 @@
 import { assert } from "https://deno.land/std@0.192.0/testing/asserts.ts";
 import { FakeAqua, Method } from "./mod.ts";
+import { getPatternPathnameGroups } from "./x/get-pathname-groups.ts";
 
 Deno.test(async function notFound() {
   const app = new FakeAqua();
@@ -34,6 +35,22 @@ Deno.test(async function simpleGET() {
 
   assert(res.status === 200);
   assert((await res.text()) === "worked!");
+});
+
+Deno.test(async function getWithUrlPattern() {
+  const app = new FakeAqua();
+
+  app
+    .route("/hello/:text")
+    .respond(
+      Method.GET,
+      (event) => new Response(getPatternPathnameGroups(event).get("text"))
+    );
+
+  const res = await app.fakeCall(new Request("http://localhost/hello/world"));
+
+  assert(res.status === 200);
+  assert((await res.text()) === "world");
 });
 
 Deno.test(async function simpleOPTIONS() {

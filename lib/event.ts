@@ -21,6 +21,7 @@ export interface Event {
 
 export interface InternalEvent extends Event {
   _internal: {
+    urlPatternResult: null | URLPatternResult;
     hasCalledEnd: boolean;
   };
 }

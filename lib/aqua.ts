@@ -65,6 +65,8 @@ interface AquaInternals<_Event extends Event> {
   ): void;
 }
 
+const URL_PATTERN_PREFIX = "http://0.0.0.0";
+
 export function getDefaultResponse() {
   return new Response("Not found.", { status: 404 });
 }
@@ -75,6 +77,8 @@ export class Aqua<_Event extends Event = Event> {
   protected routes: Record<
     string,
     {
+      path: string;
+      urlPattern: URLPattern;
       // @todo Solve this `any` situation
       steps: StepFn<any>[];
     }
@@ -90,7 +94,11 @@ export class Aqua<_Event extends Event = Event> {
         path: string,
         steps: StepFn<__Event>[]
       ) => {
-        this.routes[method + path] = { steps };
+        this.routes[method + path] = {
+          path,
+          urlPattern: new URLPattern(URL_PATTERN_PREFIX + path),
+          steps,
+        };
       },
     };
     this.abortController = new AbortController();
@@ -128,6 +136,7 @@ export class Aqua<_Event extends Event = Event> {
     return {
       _internal: {
         hasCalledEnd: false,
+        urlPatternResult: null,
       },
       request,
       response: getDefaultResponse(),
@@ -147,10 +156,24 @@ export class Aqua<_Event extends Event = Event> {
       pathName += "/";
     }
 
-    const route = this.routes[event.request.method.toUpperCase() + pathName];
+    let route = this.routes[event.request.method.toUpperCase() + pathName];
 
     if (!route) {
-      return event.response;
+      // Try to find matching pattern if there was no direct match
+      const urlPatternTestPath = "http://0.0.0.0" + pathName;
+
+      for (const _route of Object.values(this.routes)) {
+        if (_route.urlPattern.test(urlPatternTestPath)) {
+          event._internal.urlPatternResult =
+            _route.urlPattern.exec(urlPatternTestPath);
+          route = _route;
+          break;
+        }
+      }
+
+      if (!route) {
+        return event.response;
+      }
     }
 
     for (const step of route.steps) {
