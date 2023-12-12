@@ -186,6 +186,18 @@ app.serve("mystaticfolder", "/public");
 // A GET request to /public/test.txt would serve the local file at mystaticfolder/test.txt
 ```
 
+(Optional) Static route with default index page
+
+You could define a default index page for your static routes such as `index.html`
+
+```typescript
+app.serve("mystaticfolder", "/", {
+  index: "index.html",
+});
+```
+
+so when a user requests `/`, the server will serve the file `mystaticfolder/index.html`
+
 ### Regex paths
 
 You can provide a RegExp object instead of a string and receive the matches.
