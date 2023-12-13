@@ -78,6 +78,7 @@ export class Aqua<_Event extends Event = Event> {
     string,
     {
       path: string;
+      method: Method;
       urlPattern: URLPattern;
       // @todo Solve this `any` situation
       steps: StepFn<any>[];
@@ -96,6 +97,7 @@ export class Aqua<_Event extends Event = Event> {
       ) => {
         this.routes[method + path] = {
           path,
+          method,
           urlPattern: new URLPattern(URL_PATTERN_PREFIX + path),
           steps,
         };
@@ -156,14 +158,19 @@ export class Aqua<_Event extends Event = Event> {
       pathName += "/";
     }
 
-    let route = this.routes[event.request.method.toUpperCase() + pathName];
+    const requestMethod = event.request.method.toUpperCase();
+
+    let route = this.routes[requestMethod + pathName];
 
     if (!route) {
       // Try to find matching pattern if there was no direct match
       const urlPatternTestPath = URL_PATTERN_PREFIX + pathName;
 
       for (const _route of Object.values(this.routes)) {
-        if (_route.urlPattern.test(urlPatternTestPath)) {
+        if (
+          _route.urlPattern.test(urlPatternTestPath) &&
+          _route.method === requestMethod
+        ) {
           event._internal.urlPatternResult =
             _route.urlPattern.exec(urlPatternTestPath);
           route = _route;

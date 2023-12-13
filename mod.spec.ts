@@ -1,6 +1,6 @@
 import { assert } from "https://deno.land/std@0.192.0/testing/asserts.ts";
 import { FakeAqua, Method } from "./mod.ts";
-import { getPatternPathnameGroups } from "./x/get-pathname-groups.ts";
+import { getPatternPathnameGroups } from "./x/get-pattern-pathname-groups.ts";
 
 Deno.test(async function notFound() {
   const app = new FakeAqua();
@@ -161,4 +161,24 @@ Deno.test(async function failEventInStep() {
 
   assert(res.status === 500);
   assert((await res.text()) === "failed");
+});
+
+Deno.test(async function samePatternRouteWithMultipleResponds() {
+  const app = new FakeAqua();
+
+  const route = app.route("/:hello");
+
+  route.respond(Method.GET, (_event) => new Response("GET"));
+  route.respond(Method.DELETE, (_event) => new Response("DELETE"));
+
+  for (const method of ["GET", "DELETE"]) {
+    const res = await app.fakeCall(
+      new Request("http://localhost/test", {
+        method,
+      })
+    );
+
+    assert(res.status === 200);
+    assert((await res.text()) === method);
+  }
 });
